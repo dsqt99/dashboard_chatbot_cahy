@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Download, MessageSquare, RefreshCw, Search } from 'lucide-react'
 import { chatHistoryService, type ChatHistoryRow, type ChatSessionSummary } from '../services/n8n'
 import toast from 'react-hot-toast'
+import * as XLSX from 'xlsx'
 
 type ParsedChatMessage = {
   type?: string
@@ -78,30 +79,6 @@ export default function QnAManagement() {
     }
   }
 
-  const handleExportMessages = (exportRows: ChatHistoryRow[], filename: string) => {
-    const csv = [
-      ['id', 'session_id', 'type', 'content', 'message_raw'],
-      ...exportRows.map((r) => {
-        const parsed = parseChatMessage(r.message)
-        return [
-          String(r.id ?? ''),
-          r.session_id ?? '',
-          parsed.type ?? '',
-          (parsed.content ?? '').replace(/\r?\n/g, '\\n'),
-          r.message.replace(/\r?\n/g, '\\n'),
-        ]
-      }),
-    ]
-      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
-      .join('\n')
-
-    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' })
-    const link = document.createElement('a')
-    link.href = URL.createObjectURL(blob)
-    link.download = filename
-    link.click()
-  }
-
   useEffect(() => {
     loadSessions()
   }, [currentPage, pageSize])
@@ -112,19 +89,65 @@ export default function QnAManagement() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [selectedSessionId, sessionRows.length])
 
-  const handleExportSessions = (exportSessions: ChatSessionSummary[], filename: string) => {
-    const csv = [
-      ['stt', 'session_id', 'total_messages'],
-      ...exportSessions.map((s, index) => [String(sessionIndexBase + index + 1), s.session_id, String(s.length ?? 0)]),
-    ]
-      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
-      .join('\n')
+  const toCreatedAtLabel = (row: ChatHistoryRow) => {
+    const raw = row.created_at ?? row.createdat ?? row.createdAt
+    if (!raw) return ''
+    const d = new Date(raw)
+    return Number.isNaN(d.getTime()) ? String(raw) : d.toLocaleString()
+  }
 
-    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' })
+  const downloadXlsx = (rows: Array<[string, string, string, string]>, filename: string) => {
+    const aoa = [
+      ['session_id', 'sender', 'message', 'created_at'],
+      ...rows.map(([sessionId, sender, message, createdAt]) => [sessionId, sender, message, createdAt]),
+    ]
+
+    const ws = XLSX.utils.aoa_to_sheet(aoa)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'messages')
+
+    const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+    const blob = new Blob([out], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    })
     const link = document.createElement('a')
     link.href = URL.createObjectURL(blob)
     link.download = filename
     link.click()
+  }
+
+  const exportRowsToExcel = (exportRows: ChatHistoryRow[], filename: string) => {
+    const tableRows: Array<[string, string, string, string]> = exportRows.map((r) => {
+      const parsed = parseChatMessage(r.message)
+      const sender = parsed.type ?? ''
+      const message = parsed.content ?? r.message
+      const createdAt = toCreatedAtLabel(r)
+      return [r.session_id ?? '', sender, message, createdAt]
+    })
+
+    downloadXlsx(tableRows, filename)
+  }
+
+  const handleExportExcel = async () => {
+      const toastId = toast.loading('Đang xuất Excel...')
+    try {
+      if (selectedSessionId) {
+        exportRowsToExcel(sessionRows, `chat_history_${selectedSessionId}.xlsx`)
+        toast.success('Đã xuất Excel', { id: toastId })
+        return
+      }
+
+      const allRows: ChatHistoryRow[] = []
+      for (const s of sessions) {
+        const rows = await chatHistoryService.getBySessionId(s.session_id)
+        allRows.push(...rows)
+      }
+
+      exportRowsToExcel(allRows, `chat_history_page_${currentPage}.xlsx`)
+      toast.success('Đã xuất Excel', { id: toastId })
+    } catch (error: any) {
+      toast.error('Lỗi khi xuất Excel: ' + (error?.message ?? 'Unknown error'), { id: toastId })
+    }
   }
 
   const isBusy = sessionsLoading || messagesLoading
@@ -151,16 +174,12 @@ export default function QnAManagement() {
             Refresh
           </button>
           <button
-            onClick={() =>
-              selectedSessionId
-                ? handleExportMessages(sessionRows, `chat_history_${selectedSessionId}.csv`)
-                : handleExportSessions(sessions, `chat_sessions_page_${currentPage}.csv`)
-            }
+            onClick={handleExportExcel}
             disabled={isBusy || (selectedSessionId ? sessionRows.length === 0 : sessions.length === 0)}
             className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             <Download className="w-4 h-4 mr-2" />
-            Export CSV
+            Export Excel
           </button>
         </div>
       </div>

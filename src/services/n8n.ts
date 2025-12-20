@@ -98,6 +98,9 @@ export interface ChatHistoryRow {
   id: number | string
   session_id: string
   message: string
+  created_at?: string
+  createdat?: string
+  createdAt?: string
 }
 
 export interface ChatSessionSummary {
@@ -164,7 +167,14 @@ const normalizeChatHistoryRows = (payload: any): ChatHistoryRow[] => {
       const session_id = String(item?.session_id ?? item?.sessionId ?? item?.session ?? '')
       const message = typeof item?.message === 'string' ? item.message : item?.message ? JSON.stringify(item.message) : ''
       if (!session_id || !message) return null
-      return { id: id ?? '', session_id, message }
+      return {
+        id: id ?? '',
+        session_id,
+        message,
+        created_at: typeof item?.created_at === 'string' ? item.created_at : undefined,
+        createdat: typeof item?.createdat === 'string' ? item.createdat : undefined,
+        createdAt: typeof item?.createdAt === 'string' ? item.createdAt : undefined,
+      }
     })
     .filter(Boolean) as ChatHistoryRow[]
 }
@@ -257,4 +267,3 @@ export const portalMessageService = {
     return normalizePortalMessages(response.data)
   },
 }
-
