@@ -1,0 +1,24 @@
+services:
+  dashboard-web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=processing-report-dashboard_proxy-net"
+      - "traefik.http.routers.dashboard-web.rule=Host(`dashboard.chatbot.cahy.io.vn`)"
+      - "traefik.http.routers.dashboard-web.entrypoints=websecure"
+      - "traefik.http.routers.dashboard-web.tls.certresolver=myresolver"
+      - "traefik.http.services.dashboard-web.loadbalancer.server.port=80"
+      - "traefik.http.routers.dashboard-web-http.rule=Host(`dashboard.chatbot.cahy.io.vn`)"
+      - "traefik.http.routers.dashboard-web-http.entrypoints=web"
+      - "traefik.http.routers.dashboard-web-http.middlewares=dashboard-web-https-redirect"
+      - "traefik.http.middlewares.dashboard-web-https-redirect.redirectscheme.scheme=https"
+    networks:
+      - proxy-net
+    restart: unless-stopped
+
+networks:
+  proxy-net:
+    external: true
+    name: processing-report-dashboard_proxy-net
