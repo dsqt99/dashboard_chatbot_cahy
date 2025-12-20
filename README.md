@@ -1,67 +1,74 @@
-# Dashboard Quản lý Chatbot CAHY
+# CAHY Chatbot Dashboard
 
-Dashboard quản lý hệ thống chatbot Công an tỉnh Hưng Yên, tích hợp với Supabase và n8n.
+Dashboard giám sát hệ thống chatbot CAHY (Công An Hưng Yên). Frontend chạy Vite + React, lấy dữ liệu qua các webhook n8n (Portal Messages, Chat History, RAG Documents).
 
-## Tính năng
+## Tính năng chính
 
-- 📊 **Dashboard thống kê**: Thống kê vector stores, workflow executions
-- 💬 **Quản lý Q&A**: CRUD Q&A, import/export Excel, re-index vector store
-- 🗄️ **Quản lý Vector Stores**: Xem thống kê và quản lý vector stores
-- 📄 **Quản lý Tài liệu PDF**: Upload và quản lý tài liệu PDF
-- ⚙️ **Quản lý Workflows n8n**: Quản lý và trigger workflows
-- 🔧 **Cấu hình Chatbot**: Chỉnh sửa system prompt và parameters
+- **Tổng Quan Hệ Thống**: biểu đồ request, monitor Portal Messages, thống kê tài liệu và phiên chat
+- **Lịch sử trò chuyện**: xem các session và nội dung theo `session_id`
+- **Tài liệu PDF**: tải lên/xoá/xử lý tài liệu qua webhook n8n
 
-## Cài đặt
+## Yêu cầu
 
-1. Cài đặt dependencies:
+- Node.js 18+ (khuyến nghị 20)
+- npm
+
+## Chạy local (development)
+
 ```bash
 npm install
-```
-
-2. Tạo file `.env` từ `.env.example`:
-```bash
-cp .env.example .env
-```
-
-3. Cấu hình các biến môi trường trong file `.env`:
-```env
-# Supabase Configuration (kết nối đến PostgreSQL)
-VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
-
-# n8n Configuration
-VITE_N8N_API_URL=http://localhost:5678
-VITE_N8N_API_KEY=your_n8n_api_key
-```
-
-### Cấu hình PostgreSQL
-
-Dashboard cần kết nối đến PostgreSQL để quản lý documents từ `document_store` workflow.
-
-**Thông tin PostgreSQL:**
-- Host: 100.94.101.101
-- Database: chatbot
-- User: admin
-- Password: abcd@1234
-- Table: `chatbot_documents_vectorstore`
-
-Xem hướng dẫn chi tiết trong file [POSTGRES_SETUP.md](./POSTGRES_SETUP.md) để cấu hình kết nối PostgreSQL.
-
-## Chạy ứng dụng
-
-Development:
-```bash
 npm run dev
 ```
 
-Build production:
+## Build (production)
+
 ```bash
 npm run build
 ```
 
-Preview production build:
+## Cấu hình môi trường (`.env`)
+
+Tạo file `.env` ở thư mục gốc dự án và cấu hình các biến cần thiết. Không commit secrets.
+
+```env
+# n8n public API (nếu dùng các màn quản trị workflow; có thể để trống API key)
+VITE_N8N_API_URL=https://n8n-hungyen.cahy.io.vn/
+VITE_N8N_API_KEY=
+
+# Webhook: Portal Messages (POST)
+VITE_PORTAL_MESSAGES_URL=https://n8n-hungyen.cahy.io.vn/webhook/get_all_messages
+
+# Webhook: Chat History (POST)
+VITE_CHAT_HISTORY_ALL_URL=https://n8n-hungyen.cahy.io.vn/webhook/get_history_session
+VITE_CHAT_HISTORY_BY_SESSION_URL=https://n8n-hungyen.cahy.io.vn/webhook/get_history_from_sessionId
+
+# Webhook: RAG Documents
+VITE_RAG_GET_DOCUMENTS_URL=https://n8n-hungyen.cahy.io.vn/webhook/get-documents
+VITE_RAG_REMOVE_DOCUMENT_URL=https://n8n-hungyen.cahy.io.vn/webhook/remove-document
+VITE_RAG_UPLOAD_DOCUMENT_URL=https://n8n-hungyen.cahy.io.vn/webhook/upload-document
+VITE_RAG_DOCUMENT_PROCESSING_URL=https://n8n-hungyen.cahy.io.vn/webhook/document-processing
+```
+
+Ghi chú:
+- `get_history_session` không nhận `GET`, cần gọi `POST`.
+- Frontend không nên chứa thông tin đăng nhập DB. Nếu cần truy cập DB nội bộ, hãy đi qua n8n/webhook hoặc một backend trung gian.
+
+## Deploy Docker (Nginx) + Traefik
+
+Repo đã có sẵn:
+- `Dockerfile`: build Vite và serve bằng `nginx`
+- `nginx/default.conf`: cấu hình SPA route fallback
+- `docker-compose.dashboard.yml`: labels Traefik cho domain `dashboard.chatbot.cahy.io.vn`
+
+Yêu cầu:
+- Traefik chạy riêng ở stack khác và đang theo dõi Docker provider
+- Có external network `processing-report-dashboard_proxy-net`
+- Traefik có certresolver tên `myresolver`
+
+Chạy:
+
 ```bash
-npm run preview
+docker compose -f docker-compose.dashboard.yml up -d --build
 ```
 
 ## Cấu trúc dự án
@@ -69,37 +76,11 @@ npm run preview
 ```
 dashboard/
 ├── src/
-│   ├── components/      # React components
-│   ├── pages/           # Page components
-│   ├── services/        # API services (Supabase, n8n)
-│   ├── App.tsx          # Main app component
-│   └── main.tsx         # Entry point
-├── public/              # Static files
+├── public/
+├── nginx/
+│   └── default.conf
+├── Dockerfile
+├── docker-compose.dashboard.yml
 ├── package.json
 └── vite.config.ts
 ```
-
-## API Integration
-
-### Supabase
-- Q&A management: `qnaService`
-- Query types: `queryTypeService`
-- Vector store stats: `vectorStoreService`
-
-### n8n
-- Workflow management: `n8nService`
-- Execution tracking
-- Manual workflow triggers
-
-## Lưu ý
-
-- Cần cấu hình CORS cho n8n API nếu chạy trên domain khác
-- Supabase RLS policies cần được cấu hình đúng (xem POSTGRES_SETUP.md)
-- n8n API key cần có quyền đọc và thực thi workflows
-- PostgreSQL credentials không được expose trong frontend code
-- Nếu không dùng Supabase, cần tạo backend API proxy để kết nối PostgreSQL
-
-## Cấu hình PostgreSQL
-
-Xem file [POSTGRES_SETUP.md](./POSTGRES_SETUP.md) để biết cách cấu hình kết nối đến PostgreSQL server.
-
