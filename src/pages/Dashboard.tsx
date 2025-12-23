@@ -106,7 +106,7 @@ export default function Dashboard() {
     try {
       setLoading(true)
       const [sessionPage, docs, allMessages] = await Promise.all([
-        chatHistoryService.getSessionsPaged({ limit: 10, n_page: 1 }),
+        chatHistoryService.getSessionsPaged({ limit: 10, page: 1 }),
         postgresService.getDocuments(5000),
         portalMessageService.getAll(),
       ])
@@ -464,9 +464,6 @@ export default function Dashboard() {
                   <div className="mt-2 flex items-baseline gap-2">
                     <p className="text-3xl font-bold text-police-900">{sessionsTotalLabel}</p>
                     <span className="text-sm text-police-400">phiên</span>
-                  </div>
-                   <div className="mt-4 pt-4 border-t border-gray-100 flex items-center gap-4 text-xs font-medium text-police-500">
-                     <span className="flex items-center gap-1">Trang hiện tại: {sessions.length}</span>
                   </div>
                 </div>
               </div>

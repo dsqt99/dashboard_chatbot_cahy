@@ -2,6 +2,7 @@ import { ReactNode, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { 
   LayoutDashboard, 
+  BookOpen,
   MessageSquare, 
   FileText, 
   Menu,
@@ -16,6 +17,7 @@ interface LayoutProps {
 const menuItems = [
   { path: '/', label: 'Dashboard', icon: LayoutDashboard },
   { path: '/qna', label: 'Lịch sử trò chuyện', icon: MessageSquare },
+  { path: '/qna-guide', label: 'Câu hỏi hướng dẫn', icon: BookOpen },
   { path: '/documents', label: 'Tài liệu PDF', icon: FileText },
 ]
 

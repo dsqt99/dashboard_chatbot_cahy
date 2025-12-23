@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Download, MessageSquare, RefreshCw, Search } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Download, MessageSquare, RefreshCw, Search } from 'lucide-react'
 import { chatHistoryService, type ChatHistoryRow, type ChatSessionSummary } from '../services/n8n'
 import toast from 'react-hot-toast'
 import * as XLSX from 'xlsx'
@@ -40,23 +40,43 @@ export default function QnAManagement() {
   const [pageSize, setPageSize] = useState(10)
   const [currentPage, setCurrentPage] = useState(1)
   const [hasNextPage, setHasNextPage] = useState(false)
-  const [totalSessions, setTotalSessions] = useState<number | undefined>(undefined)
+  const [totalPages, setTotalPages] = useState<number | undefined>(undefined)
+  const [jumpPage, setJumpPage] = useState('')
   const chatEndRef = useRef<HTMLDivElement | null>(null)
 
-  const totalPages = useMemo(() => {
-    if (!totalSessions) return undefined
-    return Math.max(1, Math.ceil(totalSessions / pageSize))
-  }, [pageSize, totalSessions])
+  const toLooseTime = (value?: string) => {
+    if (!value) return 0
+    const raw = String(value).trim()
+    if (!raw) return 0
+    const normalized = raw.includes('T') ? raw : raw.replace(' ', 'T')
+    const d = new Date(normalized)
+    const t = d.getTime()
+    return Number.isFinite(t) ? t : 0
+  }
+
+  const goToPage = (value: string) => {
+    const n = Number(value)
+    if (!Number.isFinite(n)) return
+    const page = Math.floor(n)
+    if (page < 1) return
+    if (typeof totalPages === 'number' && page > totalPages) return
+    setCurrentPage(page)
+  }
 
   const sessionIndexBase = useMemo(() => (currentPage - 1) * pageSize, [currentPage, pageSize])
 
   const loadSessions = async () => {
     try {
       setSessionsLoading(true)
-      const result = await chatHistoryService.getSessionsPaged({ limit: pageSize, n_page: currentPage })
-      setSessions(result.data)
+      const result = await chatHistoryService.getSessionsPaged({ limit: pageSize, page: currentPage })
+      const sorted = [...result.data].sort((a, b) => {
+        const bt = toLooseTime(b.updated_at ?? b.created_at)
+        const at = toLooseTime(a.updated_at ?? a.created_at)
+        return bt - at
+      })
+      setSessions(sorted)
       setHasNextPage(result.hasNextPage)
-      setTotalSessions(result.total)
+      setTotalPages(result.total_page)
     } catch (error: any) {
       toast.error('Lỗi khi tải danh sách cuộc trò chuyện: ' + error.message)
     } finally {
@@ -82,6 +102,17 @@ export default function QnAManagement() {
   useEffect(() => {
     loadSessions()
   }, [currentPage, pageSize])
+
+  useEffect(() => {
+    setJumpPage(String(currentPage))
+  }, [currentPage])
+
+  useEffect(() => {
+    if (sessionsLoading) return
+    if (sessions.length > 0) return
+    if (currentPage <= 1) return
+    setCurrentPage((p) => Math.max(1, p - 1))
+  }, [currentPage, sessions.length, sessionsLoading])
 
   useEffect(() => {
     if (!selectedSessionId) return
@@ -129,7 +160,7 @@ export default function QnAManagement() {
   }
 
   const handleExportExcel = async () => {
-      const toastId = toast.loading('Đang xuất Excel...')
+    const toastId = toast.loading('Đang xuất Excel...')
     try {
       if (selectedSessionId) {
         exportRowsToExcel(sessionRows, `chat_history_${selectedSessionId}.xlsx`)
@@ -294,26 +325,50 @@ export default function QnAManagement() {
               </table>
             </div>
           )}
-          <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between gap-4">
+          <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between gap-3 bg-white">
             <div className="text-sm text-gray-600">
-              Trang {String(currentPage)}
-              {typeof totalPages === 'number' ? ` / ${String(totalPages)}` : ''}
-              {typeof totalSessions === 'number' ? ` • Tổng: ${totalSessions.toLocaleString()}` : ''}
+              <span className="sm:hidden">
+                Trang {currentPage}
+                {typeof totalPages === 'number' ? ` / ${totalPages}` : ''}
+              </span>
+              <span className="hidden sm:inline">Trang {currentPage}</span>
             </div>
+
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                 disabled={isBusy || currentPage <= 1}
-                className="px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="p-2 border border-gray-300 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                aria-label="Trang trước"
+                title="Trang trước"
               >
-                Trước
+                <ChevronLeft className="w-5 h-5 text-gray-700" />
               </button>
+
+              <div className="flex items-center gap-2">
+                <input
+                  value={jumpPage}
+                  onChange={(e) => setJumpPage(e.target.value.replace(/[^\d]/g, ''))}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') goToPage(jumpPage)
+                  }}
+                  onBlur={() => goToPage(jumpPage)}
+                  inputMode="numeric"
+                  disabled={isBusy}
+                  className="w-16 sm:w-20 px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white text-center focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                  aria-label="Nhập số trang"
+                />
+                <div className="hidden sm:block text-sm text-gray-500">/ {typeof totalPages === 'number' ? totalPages : '—'}</div>
+              </div>
+
               <button
                 onClick={() => setCurrentPage((p) => p + 1)}
                 disabled={isBusy || !hasNextPage}
-                className="px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="p-2 border border-gray-300 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                aria-label="Trang sau"
+                title="Trang sau"
               >
-                Sau
+                <ChevronRight className="w-5 h-5 text-gray-700" />
               </button>
             </div>
           </div>
@@ -347,6 +402,7 @@ export default function QnAManagement() {
                     const type = parsed.type || 'unknown'
                     const content = (parsed.content || r.message || '').trim()
                     const isHuman = type === 'human'
+                    const createdAtLabel = toCreatedAtLabel(r)
 
                     return (
                       <div
@@ -366,6 +422,11 @@ export default function QnAManagement() {
                           }`}
                         >
                           <div className="whitespace-pre-wrap break-words text-sm">{content}</div>
+                          {createdAtLabel ? (
+                            <div className={`mt-1 text-[11px] ${isHuman ? 'text-white/70 text-right' : 'text-gray-400 text-left'}`}>
+                              {createdAtLabel}
+                            </div>
+                          ) : null}
                         </div>
                         {isHuman && (
                           <div className="w-8 h-8 rounded-full bg-primary-600 text-white flex items-center justify-center text-xs font-semibold">

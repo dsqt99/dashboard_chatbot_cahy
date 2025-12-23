@@ -106,12 +106,46 @@ export interface ChatHistoryRow {
 export interface ChatSessionSummary {
   session_id: string
   length: number
+  created_at?: string
+  updated_at?: string
 }
 
 export interface ChatSessionPage {
   data: ChatSessionSummary[]
   total?: number
+  total_page?: number
   hasNextPage: boolean
+}
+
+const unwrapChatSessionPayload = (payload: any): any => {
+  if (Array.isArray(payload) && payload.length === 1) {
+    const first = payload[0]
+    if (first && (Array.isArray(first?.data) || Array.isArray(first?.result))) return first
+  }
+  return payload
+}
+
+const extractTotalPageFromChatSessionPayload = (payload: any): number | undefined => {
+  const root = unwrapChatSessionPayload(payload)
+  const candidates = [root?.total_page, root?.totalPage, root?.pagination?.total_page, root?.pageInfo?.total_page]
+  for (const value of candidates) {
+    if (typeof value === 'number' && Number.isFinite(value)) return value
+    const n = Number(value)
+    if (Number.isFinite(n) && n > 0) return n
+  }
+  return undefined
+}
+
+const toEpochMsFromSessionTime = (value: unknown): number => {
+  if (typeof value !== 'string') return 0
+  const s = value.trim()
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/)
+  if (m) {
+    const [, yy, mm, dd, hh, mi, ss] = m
+    return Date.UTC(Number(yy), Number(mm) - 1, Number(dd), Number(hh), Number(mi), Number(ss))
+  }
+  const n = Date.parse(s)
+  return Number.isFinite(n) ? n : 0
 }
 
 const extractList = (payload: any): any[] => {
@@ -140,20 +174,39 @@ const extractTotal = (payload: any): number | undefined => {
 }
 
 const normalizeChatSessionSummaries = (payload: any): { data: ChatSessionSummary[]; rawCount: number } => {
-  const rawList = extractList(payload)
+  const root = unwrapChatSessionPayload(payload)
+  const rawList = extractList(root)
 
-  const map = new Map<string, number>()
+  const map = new Map<string, ChatSessionSummary>()
   rawList.forEach((item: any) => {
     const session_id = String(item?.session_id ?? item?.sessionId ?? item?.session ?? '')
     const lengthRaw = item?.length ?? item?.count ?? item?.messages ?? item?.total
     const length = typeof lengthRaw === 'number' ? lengthRaw : Number(lengthRaw)
     if (!session_id) return
-    const current = map.get(session_id) ?? 0
-    map.set(session_id, Number.isFinite(length) ? Math.max(current, length) : current)
+
+    const created_at = typeof item?.created_at === 'string' ? item.created_at : undefined
+    const updated_at = typeof item?.updated_at === 'string' ? item.updated_at : undefined
+
+    const current = map.get(session_id)
+    const next: ChatSessionSummary = {
+      session_id,
+      length: Number.isFinite(length) ? Math.max(current?.length ?? 0, length) : current?.length ?? 0,
+      created_at: created_at ?? current?.created_at,
+      updated_at: updated_at ?? current?.updated_at,
+    }
+
+    map.set(session_id, next)
+  })
+
+  const data = Array.from(map.values()).sort((a, b) => {
+    const bt = toEpochMsFromSessionTime(b.updated_at ?? b.created_at)
+    const at = toEpochMsFromSessionTime(a.updated_at ?? a.created_at)
+    if (bt !== at) return bt - at
+    return a.session_id.localeCompare(b.session_id)
   })
 
   return {
-    data: Array.from(map.entries()).map(([session_id, length]) => ({ session_id, length })),
+    data,
     rawCount: rawList.length,
   }
 }
@@ -181,16 +234,18 @@ const normalizeChatHistoryRows = (payload: any): ChatHistoryRow[] => {
 
 export const chatHistoryService = {
   async getSessions(limit = 10, page = 1): Promise<ChatSessionSummary[]> {
-    const result = await this.getSessionsPaged({ limit, n_page: page })
+    const result = await this.getSessionsPaged({ limit, page: page })
     return result.data
   },
 
-  async getSessionsPaged(params: { limit: number; n_page: number }): Promise<ChatSessionPage> {
+  async getSessionsPaged(params: { limit: number; page: number }): Promise<ChatSessionPage> {
     const response = await axios.post(getHistorySessionUrl, params)
-    const total = extractTotal(response.data)
-    const { data, rawCount } = normalizeChatSessionSummaries(response.data)
-    const hasNextPage = total ? params.n_page * params.limit < total : rawCount >= params.limit
-    return { data, total, hasNextPage }
+    const root = unwrapChatSessionPayload(response.data)
+    const total = extractTotal(root)
+    const total_page = extractTotalPageFromChatSessionPayload(root)
+    const { data, rawCount } = normalizeChatSessionSummaries(root)
+    const hasNextPage = typeof total_page === 'number' ? params.page < total_page : total ? params.page * params.limit < total : rawCount >= params.limit
+    return { data, total, total_page, hasNextPage }
   },
 
   async getBySessionId(sessionId: string): Promise<ChatHistoryRow[]> {
@@ -265,5 +320,202 @@ export const portalMessageService = {
   async getAll(): Promise<PortalMessageRow[]> {
     const response = await axios.post(getAllMessagesUrl, {})
     return normalizePortalMessages(response.data)
+  },
+}
+
+const qnaVectorstoreProcessingUrl =
+  import.meta.env.VITE_QNA_VECTORSTORE_PROCESSING_URL ||
+  'https://n8n-hungyen.cahy.io.vn/webhook/qnavectorstore_processing'
+
+const updateQnaRowUrl =
+  import.meta.env.VITE_QNA_VECTORSTORE_UPDATE_URL ||
+  'https://n8n-hungyen.cahy.io.vn/webhook/update_qna_row'
+
+const removeQnaRowUrl =
+  import.meta.env.VITE_QNA_VECTORSTORE_REMOVE_URL ||
+  'https://n8n-hungyen.cahy.io.vn/webhook/remove_qna_row'
+
+const getQnaVectorstoreUrl =
+  import.meta.env.VITE_QNA_VECTORSTORE_LIST_URL ||
+  'https://n8n-hungyen.cahy.io.vn/webhook/get_qna_vectorstore'
+
+const searchQnaUrl =
+  import.meta.env.VITE_QNA_VECTORSTORE_SEARCH_URL || 'https://n8n-hungyen.cahy.io.vn/webhook/search_qna'
+
+export interface QnAGuideRow {
+  id?: string
+  created_at?: string
+  question: string
+  answer: string
+  type: string
+  note?: string
+  raw?: any
+}
+
+export interface QnAGuidePage {
+  data: QnAGuideRow[]
+  total?: number
+  total_page?: number
+  hasNextPage: boolean
+}
+
+const unwrapQnaVectorstorePayload = (payload: any): any => {
+  if (Array.isArray(payload) && payload.length === 1) {
+    const first = payload[0]
+    if (first && (Array.isArray(first?.data) || Array.isArray(first?.result))) return first
+  }
+  return payload
+}
+
+const normalizeQnAGuideRows = (payload: any): QnAGuideRow[] => {
+  const root = unwrapQnaVectorstorePayload(payload)
+  const rawList = extractList(root)
+  return rawList
+    .map((item: any) => {
+      const idRaw = item?.id ?? item?.ID ?? item?.uuid ?? item?.row_id ?? item?.rowId
+      const createdAtRaw =
+        item?.created_at ?? item?.createdAt ?? item?.createdat ?? item?.created ?? item?.time
+
+      const question =
+        typeof item?.question === 'string'
+          ? item.question
+          : typeof item?.['Câu hỏi'] === 'string'
+            ? item['Câu hỏi']
+            : ''
+      const answer =
+        typeof item?.answer === 'string'
+          ? item.answer
+          : typeof item?.['Câu trả lời'] === 'string'
+            ? item['Câu trả lời']
+            : ''
+      const type =
+        typeof item?.type === 'string'
+          ? item.type
+          : typeof item?.['Loại câu hỏi'] === 'string'
+            ? item['Loại câu hỏi']
+            : ''
+      const note =
+        typeof item?.note === 'string'
+          ? item.note
+          : typeof item?.['Lưu ý'] === 'string'
+            ? item['Lưu ý']
+            : undefined
+
+      if (!question || !answer || !type) return null
+
+      return {
+        id: idRaw != null ? String(idRaw) : undefined,
+        created_at: typeof createdAtRaw === 'string' ? createdAtRaw : createdAtRaw != null ? String(createdAtRaw) : undefined,
+        question,
+        answer,
+        type,
+        note,
+        raw: item,
+      } satisfies QnAGuideRow
+    })
+    .filter(Boolean) as QnAGuideRow[]
+}
+
+const extractTotalPage = (payload: any): number | undefined => {
+  const root = unwrapQnaVectorstorePayload(payload)
+  const candidates = [root?.total_page, root?.totalPage, root?.pagination?.total_page, root?.pageInfo?.total_page]
+  for (const value of candidates) {
+    if (typeof value === 'number' && Number.isFinite(value)) return value
+    const n = Number(value)
+    if (Number.isFinite(n) && n > 0) return n
+  }
+  return undefined
+}
+
+export const qnaVectorstoreService = {
+  async listPaged(params: { limit: number; page: number; type?: string }): Promise<QnAGuidePage> {
+    const payload = {
+      limit: params.limit,
+      page: params.page,
+      ...(params.type ? { type: params.type } : {}),
+    }
+    const response = await axios.post(getQnaVectorstoreUrl, payload)
+    const root = unwrapQnaVectorstorePayload(response.data)
+    const total = extractTotal(root)
+    const total_page = extractTotalPage(root)
+    const data = normalizeQnAGuideRows(root)
+    const hasNextPage = typeof total_page === 'number' ? params.page < total_page : total ? params.page * params.limit < total : data.length >= params.limit
+    return { data, total, total_page, hasNextPage }
+  },
+
+  async searchPaged(params: { limit: number; page: number; query: string }): Promise<QnAGuidePage> {
+    const payload = {
+      limit: params.limit,
+      page: params.page,
+      query: params.query,
+    }
+    const response = await axios.post(searchQnaUrl, payload)
+    const root = unwrapQnaVectorstorePayload(response.data)
+    const total = extractTotal(root)
+    const total_page = extractTotalPage(root)
+    const data = normalizeQnAGuideRows(root)
+    const hasNextPage = typeof total_page === 'number' ? params.page < total_page : total ? params.page * params.limit < total : data.length >= params.limit
+    return { data, total, total_page, hasNextPage }
+  },
+
+  async listAll(): Promise<QnAGuideRow[]> {
+    const response = await axios.post(getQnaVectorstoreUrl, { limit: -1, page: 1 })
+    const root = unwrapQnaVectorstorePayload(response.data)
+    return normalizeQnAGuideRows(root)
+  },
+
+  async list(): Promise<QnAGuideRow[]> {
+    const page = await this.listPaged({ limit: 1000, page: 1 })
+    return page.data
+  },
+
+  async upsert(row: Omit<QnAGuideRow, 'raw'>) {
+    await axios.post(qnaVectorstoreProcessingUrl, { rows: [row] })
+  },
+
+  async upsertMany(rows: Array<Omit<QnAGuideRow, 'raw'>>) {
+    await axios.post(qnaVectorstoreProcessingUrl, { rows })
+  },
+
+  async updateRows(rows: Array<Omit<QnAGuideRow, 'raw'>>) {
+    await axios.post(updateQnaRowUrl, { rows })
+  },
+
+  async removeRows(rows: Array<Omit<QnAGuideRow, 'raw'>>) {
+    await axios.post(removeQnaRowUrl, { rows })
+  },
+
+  async deleteById(id: string) {
+    const all = await this.listAll()
+    const match = all.find((r) => r.id === id)
+    if (match) {
+      await this.removeRows([
+        {
+          id: match.id,
+          question: match.question,
+          answer: match.answer,
+          type: match.type,
+          note: match.note,
+          created_at: match.created_at,
+        },
+      ])
+      return
+    }
+    await this.removeRows([{ id, question: '', answer: '', type: '' }])
+  },
+
+  async deleteByType(type: string) {
+    const all = await this.listAll()
+    const rows = all
+      .filter((r) => String(r.type) === type)
+      .map((r) => ({
+        id: r.id,
+        question: r.question,
+        answer: r.answer,
+        type: r.type,
+        note: r.note,
+        created_at: r.created_at,
+      }))
+    await axios.post(removeQnaRowUrl, { rows })
   },
 }
