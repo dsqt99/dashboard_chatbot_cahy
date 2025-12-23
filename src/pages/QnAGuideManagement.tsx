@@ -87,12 +87,12 @@ export default function QnAGuideManagement() {
   const [tooltip, setTooltip] = useState<{ content: string; x: number; y: number } | null>(null)
 
   const [colWidths, setColWidths] = useState({
-    created_at: 170,
-    type: 110,
-    question: 640,
-    answer: 760,
-    note: 220,
-    actions: 120,
+    created_at: 110,
+    type: 90,
+    question: 820,
+    answer: 980,
+    note: 150,
+    actions: 90,
   })
   const resizingRef = useRef<{ key: keyof typeof colWidths; startX: number; startWidth: number } | null>(null)
 
@@ -117,11 +117,11 @@ export default function QnAGuideManagement() {
 
       const minWidthByKey: Record<keyof typeof colWidths, number> = {
         created_at: 140,
-        type: 110,
-        question: 240,
-        answer: 240,
+        type: 80,
+        question: 320,
+        answer: 360,
         note: 140,
-        actions: 120,
+        actions: 110,
       }
 
       const minWidth = minWidthByKey[active.key]
@@ -932,7 +932,7 @@ export default function QnAGuideManagement() {
                       </td>
                       <td className="px-4 py-4 text-sm text-gray-700">
                         <div
-                          className="line-clamp-2 cursor-help"
+                          className="line-clamp-6 cursor-help"
                           onMouseEnter={(e) => {
                             const value = String(r.question ?? '').trim()
                             if (!value) return
@@ -946,7 +946,7 @@ export default function QnAGuideManagement() {
                       </td>
                       <td className="px-4 py-4 text-sm text-gray-700">
                         <div
-                          className="line-clamp-2 cursor-help whitespace-pre-wrap"
+                          className="line-clamp-6 cursor-help whitespace-pre-wrap"
                           onMouseEnter={(e) => {
                             const value = String(r.answer ?? '').trim()
                             if (!value) return
