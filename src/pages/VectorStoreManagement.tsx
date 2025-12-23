@@ -1,8 +1,14 @@
 import { useEffect, useState } from 'react'
 import { Database, RefreshCw, Search } from 'lucide-react'
-import { vectorStoreService, queryTypeService, type QueryType } from '../services/supabase'
-import { n8nService } from '../services/n8n'
+import { n8nService, qnaVectorstoreService } from '../services/n8n'
+import { postgresService } from '../services/postgres'
 import toast from 'react-hot-toast'
+
+type QueryType = {
+  id: string
+  type: string
+  description?: string
+}
 
 export default function VectorStoreManagement() {
   const [stats, setStats] = useState({
@@ -20,12 +26,13 @@ export default function VectorStoreManagement() {
   const loadData = async () => {
     try {
       setLoading(true)
-      const [vectorStats, types] = await Promise.all([
-        vectorStoreService.getStats(),
-        queryTypeService.getAll(),
-      ])
-      setStats(vectorStats)
-      setQueryTypes(types as QueryType[])
+      const [qna, docs] = await Promise.all([qnaVectorstoreService.listAll(), postgresService.getDocuments(10000)])
+      setStats({
+        qna_count: qna.length,
+        document_count: docs.length,
+        query_type_count: 0,
+      })
+      setQueryTypes([])
     } catch (error: any) {
       toast.error('Lỗi khi tải dữ liệu: ' + error.message)
     } finally {

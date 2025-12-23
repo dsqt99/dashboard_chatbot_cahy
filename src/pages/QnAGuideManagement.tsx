@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
+import { createPortal } from 'react-dom'
 import {
   Plus,
   RefreshCw,
@@ -83,6 +84,17 @@ export default function QnAGuideManagement() {
   const [metaTotal, setMetaTotal] = useState<number | undefined>(undefined)
   const [metaTypes, setMetaTypes] = useState<string[]>([])
   const [jumpPage, setJumpPage] = useState('')
+  const [tooltip, setTooltip] = useState<{ content: string; x: number; y: number } | null>(null)
+
+  const [colWidths, setColWidths] = useState({
+    created_at: 170,
+    type: 110,
+    question: 640,
+    answer: 760,
+    note: 220,
+    actions: 120,
+  })
+  const resizingRef = useRef<{ key: keyof typeof colWidths; startX: number; startWidth: number } | null>(null)
 
   const [draftQuestion, setDraftQuestion] = useState('')
   const [draftAnswer, setDraftAnswer] = useState('')
@@ -95,6 +107,40 @@ export default function QnAGuideManagement() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [draftId, setDraftId] = useState<string | undefined>(undefined)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+
+  useEffect(() => {
+    const onPointerMove = (event: PointerEvent) => {
+      const active = resizingRef.current
+      if (!active) return
+      const delta = event.clientX - active.startX
+      const nextWidth = active.startWidth + delta
+
+      const minWidthByKey: Record<keyof typeof colWidths, number> = {
+        created_at: 140,
+        type: 110,
+        question: 240,
+        answer: 240,
+        note: 140,
+        actions: 120,
+      }
+
+      const minWidth = minWidthByKey[active.key]
+      const clamped = Math.max(minWidth, Math.floor(nextWidth))
+
+      setColWidths((prev) => (prev[active.key] === clamped ? prev : { ...prev, [active.key]: clamped }))
+    }
+
+    const onPointerUp = () => {
+      resizingRef.current = null
+    }
+
+    window.addEventListener('pointermove', onPointerMove)
+    window.addEventListener('pointerup', onPointerUp)
+    return () => {
+      window.removeEventListener('pointermove', onPointerMove)
+      window.removeEventListener('pointerup', onPointerUp)
+    }
+  }, [])
 
   const loadMeta = async () => {
     try {
@@ -757,7 +803,7 @@ export default function QnAGuideManagement() {
           </div>
         ) : (
           <div className="max-h-[65vh] overflow-auto">
-            <table className="min-w-full divide-y divide-gray-200">
+            <table className="min-w-full table-fixed divide-y divide-gray-200">
               <thead className="bg-gray-50 sticky top-0 z-10">
                 <tr>
                   <th className="px-4 py-3 text-left w-10">
@@ -772,12 +818,78 @@ export default function QnAGuideManagement() {
                       )}
                     </button>
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Thời gian tạo</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Loại câu hỏi</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Câu hỏi</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Câu trả lời</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Lưu ý</th>
-                  <th className="px-6 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Thao tác</th>
+                  <th
+                    className="relative px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider"
+                    style={{ width: colWidths.created_at }}
+                  >
+                    Thời gian tạo
+                    <div
+                      className="absolute right-0 top-0 h-full w-2 cursor-col-resize touch-none select-none hover:bg-gray-300/60"
+                      onPointerDown={(e) => {
+                        resizingRef.current = { key: 'created_at', startX: e.clientX, startWidth: colWidths.created_at }
+                      }}
+                    />
+                  </th>
+                  <th
+                    className="relative px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider"
+                    style={{ width: colWidths.type }}
+                  >
+                    Loại câu hỏi
+                    <div
+                      className="absolute right-0 top-0 h-full w-2 cursor-col-resize touch-none select-none hover:bg-gray-300/60"
+                      onPointerDown={(e) => {
+                        resizingRef.current = { key: 'type', startX: e.clientX, startWidth: colWidths.type }
+                      }}
+                    />
+                  </th>
+                  <th
+                    className="relative px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider"
+                    style={{ width: colWidths.question }}
+                  >
+                    Câu hỏi
+                    <div
+                      className="absolute right-0 top-0 h-full w-2 cursor-col-resize touch-none select-none hover:bg-gray-300/60"
+                      onPointerDown={(e) => {
+                        resizingRef.current = { key: 'question', startX: e.clientX, startWidth: colWidths.question }
+                      }}
+                    />
+                  </th>
+                  <th
+                    className="relative px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider"
+                    style={{ width: colWidths.answer }}
+                  >
+                    Câu trả lời
+                    <div
+                      className="absolute right-0 top-0 h-full w-2 cursor-col-resize touch-none select-none hover:bg-gray-300/60"
+                      onPointerDown={(e) => {
+                        resizingRef.current = { key: 'answer', startX: e.clientX, startWidth: colWidths.answer }
+                      }}
+                    />
+                  </th>
+                  <th
+                    className="relative px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider"
+                    style={{ width: colWidths.note }}
+                  >
+                    Lưu ý
+                    <div
+                      className="absolute right-0 top-0 h-full w-2 cursor-col-resize touch-none select-none hover:bg-gray-300/60"
+                      onPointerDown={(e) => {
+                        resizingRef.current = { key: 'note', startX: e.clientX, startWidth: colWidths.note }
+                      }}
+                    />
+                  </th>
+                  <th
+                    className="relative px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider"
+                    style={{ width: colWidths.actions }}
+                  >
+                    Thao tác
+                    <div
+                      className="absolute right-0 top-0 h-full w-2 cursor-col-resize touch-none select-none hover:bg-gray-300/60"
+                      onPointerDown={(e) => {
+                        resizingRef.current = { key: 'actions', startX: e.clientX, startWidth: colWidths.actions }
+                      }}
+                    />
+                  </th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
@@ -801,20 +913,55 @@ export default function QnAGuideManagement() {
                           )}
                         </button>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500 font-mono">
+                      <td className="px-4 py-4 whitespace-nowrap text-xs text-gray-500 font-mono">
                         {r.created_at ? new Date(r.created_at).toLocaleString() : '—'}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 font-mono">{r.type}</td>
-                      <td className="px-6 py-4 text-sm text-gray-700 max-w-[360px]">
-                        <div className="max-h-20 overflow-hidden">{r.question}</div>
+                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-700 font-mono">
+                        <div
+                          className="truncate cursor-help"
+                          onMouseEnter={(e) => {
+                            const value = String(r.type ?? '').trim()
+                            if (!value) return
+                            const rect = e.currentTarget.getBoundingClientRect()
+                            setTooltip({ content: value, x: rect.left, y: rect.bottom + 6 })
+                          }}
+                          onMouseLeave={() => setTooltip(null)}
+                        >
+                          {r.type}
+                        </div>
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-700 max-w-[420px]">
-                        <div className="max-h-24 overflow-hidden whitespace-pre-wrap">{r.answer}</div>
+                      <td className="px-4 py-4 text-sm text-gray-700">
+                        <div
+                          className="line-clamp-2 cursor-help"
+                          onMouseEnter={(e) => {
+                            const value = String(r.question ?? '').trim()
+                            if (!value) return
+                            const rect = e.currentTarget.getBoundingClientRect()
+                            setTooltip({ content: value, x: rect.left, y: rect.bottom + 6 })
+                          }}
+                          onMouseLeave={() => setTooltip(null)}
+                        >
+                          {r.question}
+                        </div>
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-700 max-w-[280px]">
-                        <div className="max-h-20 overflow-hidden">{r.note ?? ''}</div>
+                      <td className="px-4 py-4 text-sm text-gray-700">
+                        <div
+                          className="line-clamp-2 cursor-help whitespace-pre-wrap"
+                          onMouseEnter={(e) => {
+                            const value = String(r.answer ?? '').trim()
+                            if (!value) return
+                            const rect = e.currentTarget.getBoundingClientRect()
+                            setTooltip({ content: value, x: rect.left, y: rect.bottom + 6 })
+                          }}
+                          onMouseLeave={() => setTooltip(null)}
+                        >
+                          {r.answer}
+                        </div>
                       </td>
-                      <td className="px-6 py-4 text-right whitespace-nowrap">
+                      <td className="px-4 py-4 text-sm text-gray-700">
+                        <div className="line-clamp-2">{r.note ?? ''}</div>
+                      </td>
+                      <td className="px-4 py-4 text-right whitespace-nowrap">
                         <div className="flex items-center justify-end gap-2">
                           <button
                             onClick={() => handleEditRow(r)}
@@ -894,6 +1041,16 @@ export default function QnAGuideManagement() {
           </div>
         </div>
       </div>
+      {tooltip &&
+        createPortal(
+          <div
+            className="fixed z-[9999] max-w-lg p-4 bg-white rounded-lg shadow-xl border border-gray-200 text-sm text-gray-800 animate-fade-in pointer-events-none"
+            style={{ top: tooltip.y, left: tooltip.x }}
+          >
+            <div className="whitespace-pre-wrap">{tooltip.content}</div>
+          </div>,
+          document.body,
+        )}
     </div>
   )
 }
