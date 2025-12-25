@@ -32,7 +32,7 @@ services:
       - "traefik.http.routers.dashboard-backend.rule=Host(`api.markitdown.cahy.io.vn`)"
       - "traefik.http.routers.dashboard-backend.entrypoints=websecure"
       - "traefik.http.routers.dashboard-backend.tls.certresolver=myresolver"
-      - "traefik.http.services.dashboard-backend.loadbalancer.server.port=8000"
+      - "traefik.http.services.dashboard-backend.loadbalancer.server.port=2312"
       - "traefik.http.routers.dashboard-backend-http.rule=Host(`api.markitdown.cahy.io.vn`)"
       - "traefik.http.routers.dashboard-backend-http.entrypoints=web"
       - "traefik.http.routers.dashboard-backend-http.middlewares=dashboard-backend-https-redirect"
