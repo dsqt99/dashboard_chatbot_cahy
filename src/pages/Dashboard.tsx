@@ -409,7 +409,7 @@ export default function Dashboard() {
                       Hệ thống
                     </span>
                   </div>
-                  <p className="text-sm font-semibold text-police-500 uppercase tracking-wide">Tài liệu PDF</p>
+                  <p className="text-sm font-semibold text-police-500 uppercase tracking-wide">Tài liệu</p>
                   <div className="mt-2 flex items-baseline gap-2">
                     <p className="text-3xl font-bold text-police-900">{documentSummary.total.toLocaleString()}</p>
                     <span className="text-sm text-police-400">files</span>
@@ -435,7 +435,7 @@ export default function Dashboard() {
                       Queue
                     </span>
                   </div>
-                  <p className="text-sm font-semibold text-police-500 uppercase tracking-wide">PDF Chờ Xử Lý</p>
+                  <p className="text-sm font-semibold text-police-500 uppercase tracking-wide">Tài liệu Chờ Xử Lý</p>
                   <div className="mt-2 flex items-baseline gap-2">
                     <p className="text-3xl font-bold text-police-900">{documentSummary.uploaded.toLocaleString()}</p>
                     <span className="text-sm text-police-400">files</span>

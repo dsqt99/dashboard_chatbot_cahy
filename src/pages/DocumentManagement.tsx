@@ -30,12 +30,6 @@ export default function DocumentManagement() {
   }
 
   const handleUpload = async (file: File) => {
-    const isPdf =
-      file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
-    if (!isPdf) {
-      toast.error('Chỉ cho phép tải lên file PDF')
-      return
-    }
     try {
       await postgresService.uploadDocument(file)
       toast.success('Đã tải lên tài liệu')
@@ -76,16 +70,17 @@ export default function DocumentManagement() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Quản lý Tài liệu PDF</h1>
+          <h1 className="text-3xl font-bold text-gray-900">Quản lý Tài liệu</h1>
           <p className="mt-1 text-sm text-gray-500">
-            Quản lý file PDF dùng cho RAG (danh sách/xóa/tải lên)
+            Quản lý tài liệu dùng cho RAG (danh sách/xóa/tải lên)
           </p>
         </div>
         <div className="flex flex-col sm:flex-row gap-2">
           <input
             ref={fileInputRef}
             type="file"
-            accept="application/pdf,.pdf"
+            // Accept many formats supported by MarkItDown
+            accept=".pdf,.pptx,.docx,.xlsx,.xls,.jpg,.jpeg,.png,.wav,.mp3,.html,.csv,.json,.xml,.zip,.txt"
             className="hidden"
             onChange={(e) => {
               const file = e.target.files?.[0]
@@ -99,14 +94,14 @@ export default function DocumentManagement() {
             className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors"
           >
             <Upload className="w-4 h-4 mr-2" />
-            Tải lên PDF
+            Tải lên Tài liệu
           </button>
           <button
             onClick={handleProcessDocuments}
             className="inline-flex items-center px-4 py-2 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-gradient-to-r from-primary-600 to-primary-700 hover:from-primary-700 hover:to-primary-800 transition-all"
           >
             <RefreshCw className="w-4 h-4 mr-2" />
-            Xử lý PDF
+            Xử lý Tài liệu
           </button>
         </div>
       </div>
@@ -132,9 +127,9 @@ export default function DocumentManagement() {
           ℹ️ Hướng dẫn sử dụng
         </h3>
         <ul className="text-sm text-blue-700 space-y-1 list-disc list-inside">
-          <li>Click "Tải lên PDF" để thêm tài liệu vào hệ thống</li>
-          <li>Click "Xử lý PDF" để chạy chunking/embedding dữ liệu PDF</li>
-          <li>Hiển thị danh sách file PDF, xóa tài liệu</li>
+          <li>Click "Tải lên Tài liệu" để thêm tài liệu vào hệ thống (hỗ trợ PDF, Word, Excel, PPT, Ảnh, Audio, v.v.)</li>
+          <li>Click "Xử lý Tài liệu" để chạy convert (MarkItDown) & chunking/embedding dữ liệu</li>
+          <li>Hiển thị danh sách file, xóa tài liệu</li>
         </ul>
       </div>
 
@@ -153,7 +148,7 @@ export default function DocumentManagement() {
             <FileText className="w-12 h-12 text-gray-300 mx-auto mb-4" />
             <p className="text-gray-500 font-medium">Không có file nào</p>
             <p className="text-sm text-gray-400 mt-1">
-              Hãy tải lên PDF hoặc trigger workflow để đồng bộ
+              Hãy tải lên tài liệu hoặc trigger workflow để đồng bộ
             </p>
           </div>
         ) : (

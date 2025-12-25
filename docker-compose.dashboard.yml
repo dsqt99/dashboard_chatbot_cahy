@@ -18,6 +18,25 @@ services:
       - proxy-net
     restart: unless-stopped
 
+  dashboard-backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=processing-report-dashboard_proxy-net"
+      - "traefik.http.routers.dashboard-backend.rule=Host(`api.markitdown.cahy.io.vn`)"
+      - "traefik.http.routers.dashboard-backend.entrypoints=websecure"
+      - "traefik.http.routers.dashboard-backend.tls.certresolver=myresolver"
+      - "traefik.http.services.dashboard-backend.loadbalancer.server.port=8000"
+      - "traefik.http.routers.dashboard-backend-http.rule=Host(`api.markitdown.cahy.io.vn`)"
+      - "traefik.http.routers.dashboard-backend-http.entrypoints=web"
+      - "traefik.http.routers.dashboard-backend-http.middlewares=dashboard-backend-https-redirect"
+      - "traefik.http.middlewares.dashboard-backend-https-redirect.redirectscheme.scheme=https"
+    networks:
+      - proxy-net
+    restart: unless-stopped
+
 networks:
   proxy-net:
     external: true
