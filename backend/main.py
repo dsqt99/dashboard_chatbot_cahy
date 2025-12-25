@@ -15,6 +15,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
+
 @app.post("/convert")
 async def convert_to_markdown(file: UploadFile = File(...)):
     tmp_path = None
@@ -50,4 +54,4 @@ async def convert_to_markdown(file: UploadFile = File(...)):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=2312)

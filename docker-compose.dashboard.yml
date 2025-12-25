@@ -16,12 +16,16 @@ services:
       - "traefik.http.middlewares.dashboard-web-https-redirect.redirectscheme.scheme=https"
     networks:
       - proxy-net
+    ports:
+      - "8000:8000"
     restart: unless-stopped
 
   dashboard-backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    ports:
+      - "2312:2312"
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=processing-report-dashboard_proxy-net"
