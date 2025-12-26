@@ -2,19 +2,19 @@ import axios from 'axios'
 
 const getDocumentsUrl =
   import.meta.env.VITE_RAG_GET_DOCUMENTS_URL ||
-  'https://traefik/n8n-hungyen.cahy.io.vn/webhook/get-documents'
+  'https://n8n-hungyen.cahy.io.vn/webhook/get-documents'
 
 const removeDocumentUrl =
   import.meta.env.VITE_RAG_REMOVE_DOCUMENT_URL ||
-  'https://traefik/n8n-hungyen.cahy.io.vn/webhook/remove-document'
+  'https://n8n-hungyen.cahy.io.vn/webhook/remove-document'
 
 const uploadDocumentUrl =
   import.meta.env.VITE_RAG_UPLOAD_DOCUMENT_URL ||
-  'https://traefik/n8n-hungyen.cahy.io.vn/webhook/upload-document'
+  'https://n8n-hungyen.cahy.io.vn/webhook/upload-document'
 
 const documentProcessingUrl =
   import.meta.env.VITE_RAG_DOCUMENT_PROCESSING_URL ||
-  'https://traefik/n8n-hungyen.cahy.io.vn/webhook/document-processing'
+  'https://n8n-hungyen.cahy.io.vn/webhook/document-processing'
 
 export interface RagDocumentFile {
   file_id: string

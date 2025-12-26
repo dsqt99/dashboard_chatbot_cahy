@@ -14,6 +14,8 @@ services:
       - "traefik.http.routers.dashboard-web-http.entrypoints=web"
       - "traefik.http.routers.dashboard-web-http.middlewares=dashboard-web-https-redirect"
       - "traefik.http.middlewares.dashboard-web-https-redirect.redirectscheme.scheme=https"
+    env_file:
+      - .env
     networks:
       - proxy-net
     ports:
