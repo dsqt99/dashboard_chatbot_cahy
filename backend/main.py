@@ -1,9 +1,12 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from markitdown import MarkItDown
 import shutil
 import os
 import tempfile
+import base64
+import binascii
 
 app = FastAPI()
 
@@ -15,56 +18,39 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+class ConvertRequest(BaseModel):
+    base64_content: str
+    filename: str = "document"
+
 @app.get("/health")
 async def health_check():
     return {"status": "ok"}
 
 @app.post("/convert")
-async def convert_to_markdown(
-    request: Request,
-    file: UploadFile = File(None),
-    x_filename: str | None = Header(None)
-):
+async def convert_to_markdown(request: ConvertRequest):
     tmp_path = None
-    filename = "document"
     
     try:
-        content_type = request.headers.get("content-type", "")
+        # Decode base64 content
+        try:
+            # Handle data URI scheme if present (e.g., data:application/pdf;base64,...)
+            if "," in request.base64_content:
+                content_str = request.base64_content.split(",", 1)[1]
+            else:
+                content_str = request.base64_content
+                
+            file_content = base64.b64decode(content_str)
+        except binascii.Error as e:
+            raise HTTPException(status_code=400, detail="Invalid base64 content")
+
+        # Determine extension
+        filename = request.filename or "document"
+        ext = os.path.splitext(filename)[1]
         
-        # Determine source and filename
-        if file and "multipart/form-data" in content_type:
-            filename = file.filename or "document"
-            ext = os.path.splitext(filename)[1]
-            
-            # Save uploaded file to a temporary file
-            with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
-                shutil.copyfileobj(file.file, tmp)
-                tmp_path = tmp.name
-        else:
-            # Handle raw binary upload
-            if x_filename:
-                filename = x_filename
-            
-            # Try to guess extension from content-type if not in filename
-            ext = os.path.splitext(filename)[1]
-            if not ext:
-                if "application/pdf" in content_type:
-                    ext = ".pdf"
-                elif "application/vnd.openxmlformats-officedocument.wordprocessingml.document" in content_type:
-                    ext = ".docx"
-                elif "image/jpeg" in content_type:
-                    ext = ".jpg"
-                elif "image/png" in content_type:
-                    ext = ".png"
-                elif "audio/mpeg" in content_type:
-                    ext = ".mp3"
-                elif "audio/wav" in content_type:
-                    ext = ".wav"
-            
-            with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
-                async for chunk in request.stream():
-                    tmp.write(chunk)
-                tmp_path = tmp.name
+        # Save to temp file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+            tmp.write(file_content)
+            tmp_path = tmp.name
 
         # Convert using MarkItDown
         md = MarkItDown()
