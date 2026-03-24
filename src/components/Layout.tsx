@@ -7,11 +7,13 @@ import {
   FileText, 
   Menu,
   X,
-  ChevronRight
+  ChevronRight,
+  LogOut
 } from 'lucide-react'
 
 interface LayoutProps {
   children: ReactNode
+  onLogout?: () => void
 }
 
 const menuItems = [
@@ -21,7 +23,7 @@ const menuItems = [
   { path: '/documents', label: 'Tài liệu PDF', icon: FileText },
 ]
 
-export default function Layout({ children }: LayoutProps) {
+export default function Layout({ children, onLogout }: LayoutProps) {
   const location = useLocation()
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
@@ -93,6 +95,15 @@ export default function Layout({ children }: LayoutProps) {
         
         {/* Footer Info */}
         <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-police-800 bg-police-950/30">
+            {onLogout && (
+              <button
+                onClick={onLogout}
+                className="w-full flex items-center gap-2 px-3 py-2 mb-2 rounded-lg text-xs text-police-300 hover:bg-cahy-red/20 hover:text-white transition-all duration-200"
+              >
+                <LogOut className="w-4 h-4" />
+                Đăng xuất
+              </button>
+            )}
             <div className="text-xs text-police-500 text-center">
                 © 2025 Công an tỉnh Hưng Yên <br/> v1.0.0
             </div>

@@ -5,11 +5,24 @@ import Dashboard from './pages/Dashboard'
 import QnAManagement from './pages/QnAManagement'
 import QnAGuideManagement from './pages/QnAGuideManagement'
 import DocumentManagement from './pages/DocumentManagement'
+import LoginPage from './pages/LoginPage'
+import { useAuth } from './hooks/useAuth'
 
 function App() {
+  const { isAuthenticated, logout } = useAuth()
+
+  if (!isAuthenticated) {
+    return (
+      <>
+        <LoginPage onLoginSuccess={() => window.location.reload()} />
+        <Toaster position="top-right" />
+      </>
+    )
+  }
+
   return (
     <Router>
-      <Layout>
+      <Layout onLogout={logout}>
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/qna" element={<QnAManagement />} />

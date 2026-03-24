@@ -3,6 +3,8 @@ import { ChevronLeft, ChevronRight, Download, MessageSquare, RefreshCw, Search }
 import { chatHistoryService, type ChatHistoryRow, type ChatSessionSummary } from '../services/n8n'
 import toast from 'react-hot-toast'
 import * as XLSX from 'xlsx'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 
 type ParsedChatMessage = {
   type?: string
@@ -421,7 +423,15 @@ export default function QnAManagement() {
                               : 'bg-white text-gray-900 border border-gray-200 rounded-bl-md'
                           }`}
                         >
-                          <div className="whitespace-pre-wrap break-words text-sm">{content}</div>
+                          {isHuman ? (
+                            <div className="whitespace-pre-wrap break-words text-sm">{content}</div>
+                          ) : (
+                            <div className="prose prose-sm max-w-none break-words text-gray-800 prose-p:my-1 prose-headings:my-2 prose-ul:my-1 prose-ol:my-1 prose-li:my-0 prose-a:text-primary-600 prose-a:no-underline hover:prose-a:underline">
+                              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                {content}
+                              </ReactMarkdown>
+                            </div>
+                          )}
                           {createdAtLabel ? (
                             <div className={`mt-1 text-[11px] ${isHuman ? 'text-white/70 text-right' : 'text-gray-400 text-left'}`}>
                               {createdAtLabel}
