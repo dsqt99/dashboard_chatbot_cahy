@@ -8,6 +8,7 @@ import Conversations from './pages/Conversations'
 import Documents from './pages/Documents'
 import LoginPage from './pages/LoginPage'
 import OAs from './pages/OAs'
+import Portals from './pages/Portals'
 import Operations from './pages/Operations'
 import Overview from './pages/Overview'
 import Sources from './pages/Sources'
@@ -34,6 +35,7 @@ export default function App() {
             <Route path="/" element={<Overview />} />
             <Route path="/sources" element={<Sources />} />
             <Route path="/oas" element={<OAs />} />
+<Route path="/oas/portals" element={<Portals />} />
             <Route path="/agents" element={<Agents />} />
             <Route path="/agent-test" element={<AgentTest />} />
             <Route path="/conversations" element={<Conversations />} />

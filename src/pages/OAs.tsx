@@ -1,6 +1,4 @@
 import {
-  Check,
-  Copy,
   ExternalLink,
   KeyRound,
   Link2,
@@ -13,29 +11,10 @@ import {
 } from 'lucide-react'
 import { useState } from 'react'
 import Modal from '../components/Modal'
-import { Empty, ErrorBox, PageHeader, fmtAgo, fmtNum, fmtTime } from '../components/ui'
+import { CopyField, Empty, ErrorBox, PageHeader, fmtAgo, fmtNum, fmtTime } from '../components/ui'
+import { ChannelTabs } from './Portals'
 import { useAsync } from '../hooks/useAsync'
 import { api, type Agent, type Department, type OA, type OACredentialStatus, type OAStats } from '../lib/api'
-
-function CopyField({ label, value }: { label: string; value: string }) {
-  const [copied, setCopied] = useState(false)
-  const copy = () => {
-    navigator.clipboard?.writeText(value)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1500)
-  }
-  return (
-    <div>
-      <span className="label">{label}</span>
-      <div className="flex gap-2">
-        <input className="field font-mono text-xs" readOnly value={value} />
-        <button type="button" onClick={copy} className="btn-ghost shrink-0 px-3" title="Sao chép">
-          {copied ? <Check className="h-4 w-4 text-ok" /> : <Copy className="h-4 w-4" />}
-        </button>
-      </div>
-    </div>
-  )
-}
 
 export default function OAs() {
   const oas = useAsync(api.listOAs, [])
@@ -217,7 +196,7 @@ export default function OAs() {
   return (
     <>
       <PageHeader
-        title="Quản lý Zalo OA"
+        title="Kênh Zalo OA & Web"
         desc="Kết nối Official Account, gán Agent trả lời tự động, cấu hình OAuth và khóa bí mật Zalo."
         actions={
           <button className="btn-primary" onClick={openCreate}>
@@ -225,6 +204,8 @@ export default function OAs() {
           </button>
         }
       />
+
+      <ChannelTabs />
 
       {err && !formOpen && !detailOA && (
         <div role="alert" className="mb-4 rounded-lg border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">

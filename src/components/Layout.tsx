@@ -24,7 +24,7 @@ import ProfileModal from './ProfileModal'
 const NAV = [
   { to: '/', label: 'Tổng quan', icon: LayoutDashboard },
   { to: '/sources', label: 'Nguồn chatbot', icon: Radio },
-  { to: '/oas', label: 'Quản lý Zalo OA', icon: MessageSquarePlus },
+  { to: '/oas', label: 'Kênh Zalo OA & Web', icon: MessageSquarePlus },
   { to: '/agents', label: 'Quản lý Agent', icon: Bot },
   { to: '/agent-test', label: 'Test Agent', icon: FlaskConical },
   { to: '/conversations', label: 'Hội thoại', icon: MessagesSquare },

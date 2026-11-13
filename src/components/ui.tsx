@@ -1,5 +1,5 @@
-import { AlertTriangle, Globe, Inbox, MessageCircle, RotateCw } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { AlertTriangle, Check, Copy, Globe, Inbox, MessageCircle, RotateCw } from 'lucide-react'
+import { useState, type ReactNode } from 'react'
 
 const nf = new Intl.NumberFormat('vi-VN')
 export const fmtNum = (n: number) => nf.format(n || 0)
@@ -105,6 +105,27 @@ export function Segmented<T extends string | number>({
           {o.label}
         </button>
       ))}
+    </div>
+  )
+}
+
+// Ô chỉ đọc + nút sao chép (URL webhook, mã nhúng widget...).
+export function CopyField({ label, value }: { label: string; value: string }) {
+  const [copied, setCopied] = useState(false)
+  const copy = () => {
+    navigator.clipboard?.writeText(value)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  }
+  return (
+    <div>
+      <span className="label">{label}</span>
+      <div className="flex gap-2">
+        <input className="field font-mono text-xs" readOnly value={value} />
+        <button type="button" onClick={copy} className="btn-ghost shrink-0 px-3" title="Sao chép">
+          {copied ? <Check className="h-4 w-4 text-ok" /> : <Copy className="h-4 w-4" />}
+        </button>
+      </div>
     </div>
   )
 }

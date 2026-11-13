@@ -194,6 +194,31 @@ export interface Source {
   last_message_at: number
 }
 
+export interface PortalWidget {
+  title?: string
+  brand?: string
+  tagline?: string
+  tooltip?: string
+  welcome?: string
+  placeholder?: string
+  position?: 'left' | 'right'
+  suggestions?: string[]
+}
+
+export interface Portal {
+  portal_id: string // = data-key của widget
+  name: string
+  domains: string[]
+  enabled: boolean
+  agent_id?: string | null
+  department_id?: string | null
+  department_name?: string | null
+  widget: PortalWidget
+  created_at?: number | null
+}
+
+export type PortalBody = Partial<Omit<Portal, 'portal_id' | 'created_at'>>
+
 export interface Conversation {
   id: number
   thread_id: string
@@ -298,6 +323,15 @@ export const api = {
   oauthUrl: (oaId: string) => request<{ oauth_url: string }>(`/oa/${encodeURIComponent(oaId)}/oauth-url`),
   disconnectOA: (oaId: string) =>
     request<{ ok: boolean }>(`/oa/${encodeURIComponent(oaId)}/disconnect`, { method: 'POST' }),
+
+  // Cổng web (widget chatbot nhúng)
+  listPortals: () => request<{ portals: Portal[]; script_url: string }>('/portals'),
+  createPortal: (body: PortalBody) =>
+    request<{ ok: boolean; portal_id: string }>('/portals', { method: 'POST', body: JSON.stringify(body) }),
+  updatePortal: (id: string, body: PortalBody) =>
+    request<{ ok: boolean }>(`/portals/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) }),
+  deletePortal: (id: string) =>
+    request<{ ok: boolean }>(`/portals/${encodeURIComponent(id)}`, { method: 'DELETE' }),
 
   // Agents
   listAgents: () => request<{ agents: Agent[] }>('/agent').then((r) => r.agents),
