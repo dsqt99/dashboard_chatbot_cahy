@@ -197,6 +197,7 @@ export interface Source {
 export interface Conversation {
   id: number
   thread_id: string
+  title: string
   channel: string
   user_id: string
   oa_id: string

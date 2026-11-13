@@ -8,6 +8,8 @@ import { api, type Conversation, type Message } from '../lib/api'
 const LIMIT = 30
 const SENDER: Record<string, string> = { user: 'Người dân', assistant: 'Trợ lý ảo', officer: 'Cán bộ', staff: 'Cán bộ', system: 'Hệ thống' }
 
+const whoOf = (c: Conversation) => c.user?.display_name || c.user_id || 'Khách ẩn danh'
+
 const toTs = (d: string, end = false) => (d ? Math.floor(new Date(`${d}T${end ? '23:59:59' : '00:00:00'}+07:00`).getTime() / 1000) : 0)
 
 async function exportXlsx(rows: Record<string, unknown>[], sheet: string, file: string) {
@@ -27,7 +29,7 @@ function Transcript({ id, nameOf, onClose }: { id: number; nameOf: (k: string) =
 
   const c = conv.data
   const s = c && sourceOf(c)
-  const who = c ? c.user?.display_name || c.user_id || 'Khách ẩn danh' : ''
+  const who = c ? whoOf(c) : ''
 
   return (
     <section className="card flex min-h-[60dvh] flex-col lg:sticky lg:top-6 lg:h-[calc(100dvh-3rem)]" aria-label="Nội dung hội thoại">
@@ -38,10 +40,11 @@ function Transcript({ id, nameOf, onClose }: { id: number; nameOf: (k: string) =
         <div className="min-w-0 flex-1">
           {c ? (
             <>
-              <p className="truncate font-semibold">{who}</p>
+              <p className="line-clamp-2 font-semibold [overflow-wrap:anywhere]" title={c.title || who}>{c.title || who}</p>
               <div className="mt-1 flex flex-wrap items-center gap-2">
                 <SourceBadge kind={s!.kind} label={nameOf(s!.key)} />
                 <StatusPill status={c.status} />
+                {c.title && <span className="text-xs text-muted">{who}</span>}
                 <span className="text-xs text-muted">Bắt đầu {fmtTime(c.started_at)}</span>
               </div>
             </>
@@ -114,7 +117,7 @@ export default function Conversations() {
   const exportPage = () =>
     list.data && exportXlsx(
       list.data.conversations.map((c: Conversation) => ({
-        'Mã': c.id, 'Người dân': c.user?.display_name || c.user_id, 'Nguồn': nameOf(sourceOf(c).key),
+        'Mã': c.id, 'Tiêu đề': c.title, 'Người dân': whoOf(c), 'Nguồn': nameOf(sourceOf(c).key),
         'Số tin nhắn': c.message_count, 'Trạng thái': c.status, 'Bắt đầu': fmtTime(c.started_at), 'Gần nhất': fmtTime(c.last_message_at),
       })),
       'Danh sach', `hoi-thoai-trang-${page + 1}.xlsx`)
@@ -186,12 +189,13 @@ export default function Conversations() {
                     <button onClick={() => set({ id: c.id })} aria-current={active || undefined}
                       className={`w-full px-4 py-3 text-left transition-colors ${active ? 'bg-accent-soft' : 'hover:bg-sunken'}`}>
                       <div className="flex items-center justify-between gap-3">
-                        <span className="truncate text-sm font-medium">{c.user?.display_name || c.user_id || 'Khách ẩn danh'}</span>
+                        <span className="truncate text-sm font-medium" title={c.title || undefined}>{c.title || whoOf(c)}</span>
                         <span className="shrink-0 text-xs text-muted">{fmtAgo(c.last_message_at)}</span>
                       </div>
                       <div className="mt-1.5 flex items-center gap-2">
                         <span className="min-w-0"><SourceBadge kind={s.kind} label={nameOf(s.key)} /></span>
                         <StatusPill status={c.status} />
+                        {c.title && <span className="min-w-0 truncate text-xs text-muted">{whoOf(c)}</span>}
                         <span className="num ml-auto shrink-0 text-xs text-muted">{c.message_count} tin</span>
                       </div>
                     </button>
