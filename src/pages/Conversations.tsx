@@ -1,0 +1,217 @@
+import { ArrowLeft, ChevronLeft, ChevronRight, Download, X } from 'lucide-react'
+import { useEffect, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import { Empty, ErrorBox, PageHeader, SourceBadge, StatusPill, fmtAgo, fmtTime, sourceOf } from '../components/ui'
+import { useAsync } from '../hooks/useAsync'
+import { api, type Conversation, type Message } from '../lib/api'
+
+const LIMIT = 30
+const SENDER: Record<string, string> = { user: 'Người dân', assistant: 'Trợ lý ảo', officer: 'Cán bộ', staff: 'Cán bộ', system: 'Hệ thống' }
+
+const toTs = (d: string, end = false) => (d ? Math.floor(new Date(`${d}T${end ? '23:59:59' : '00:00:00'}+07:00`).getTime() / 1000) : 0)
+
+async function exportXlsx(rows: Record<string, unknown>[], sheet: string, file: string) {
+  const XLSX = await import('xlsx') // ~400KB, chỉ tải khi xuất
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), sheet)
+  XLSX.writeFile(wb, file)
+}
+
+function Transcript({ id, nameOf, onClose }: { id: number; nameOf: (k: string) => string; onClose: () => void }) {
+  const conv = useAsync(() => api.conversation(id), [id])
+  const msgs = useAsync(() => api.messages(id), [id])
+  const end = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    end.current?.scrollIntoView({ block: 'end' })
+  }, [msgs.data])
+
+  const c = conv.data
+  const s = c && sourceOf(c)
+  const who = c ? c.user?.display_name || c.user_id || 'Khách ẩn danh' : ''
+
+  return (
+    <section className="card flex min-h-[60dvh] flex-col lg:sticky lg:top-6 lg:h-[calc(100dvh-3rem)]" aria-label="Nội dung hội thoại">
+      <header className="flex items-start gap-3 border-b border-line px-4 py-3">
+        <button onClick={onClose} className="rounded-lg p-2 hover:bg-sunken lg:hidden" aria-label="Quay lại danh sách">
+          <ArrowLeft className="h-4 w-4" aria-hidden />
+        </button>
+        <div className="min-w-0 flex-1">
+          {c ? (
+            <>
+              <p className="truncate font-semibold">{who}</p>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <SourceBadge kind={s!.kind} label={nameOf(s!.key)} />
+                <StatusPill status={c.status} />
+                <span className="text-xs text-muted">Bắt đầu {fmtTime(c.started_at)}</span>
+              </div>
+            </>
+          ) : (
+            <div className="skeleton h-10 w-48" />
+          )}
+        </div>
+        <button className="btn-ghost h-9 px-3" disabled={!msgs.data?.length}
+          onClick={() => msgs.data && exportXlsx(
+            msgs.data.map((m) => ({ 'Thời gian': fmtTime(m.created_at), 'Người gửi': SENDER[m.sender] || m.sender, 'Nội dung': m.content })),
+            'Hoi thoai', `hoi-thoai-${id}.xlsx`)}>
+          <Download className="h-4 w-4" aria-hidden /> <span className="hidden sm:inline">Xuất Excel</span>
+        </button>
+        <button onClick={onClose} className="hidden rounded-lg p-2 hover:bg-sunken lg:block" aria-label="Đóng">
+          <X className="h-4 w-4" aria-hidden />
+        </button>
+      </header>
+      <div className="flex-1 space-y-3 overflow-y-auto bg-sunken/50 px-4 py-4">
+        {msgs.error ? (
+          <ErrorBox message={msgs.error} onRetry={msgs.reload} />
+        ) : !msgs.data ? (
+          [0, 1, 2].map((i) => <div key={i} className={`skeleton h-14 w-2/3 ${i % 2 ? 'ml-auto' : ''}`} />)
+        ) : !msgs.data.length ? (
+          <Empty title="Hội thoại chưa có tin nhắn" />
+        ) : (
+          msgs.data.map((m: Message) => {
+            const mine = m.sender === 'user'
+            return (
+              <div key={m.id} className={`flex flex-col ${mine ? 'items-start' : 'items-end'}`}>
+                <div className={`max-w-[85%] whitespace-pre-wrap break-words rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed [overflow-wrap:anywhere] ${
+                  mine ? 'rounded-bl-md bg-surface shadow-card' : m.sender === 'assistant' ? 'rounded-br-md bg-accent text-white' : 'rounded-br-md bg-ok text-white'
+                }`}>
+                  {m.content || <em className="opacity-70">[không có nội dung văn bản]</em>}
+                </div>
+                <span className="mt-1 px-1 text-[11px] text-muted">{SENDER[m.sender] || m.sender} · {fmtTime(m.created_at)}</span>
+              </div>
+            )
+          })
+        )}
+        <div ref={end} />
+      </div>
+    </section>
+  )
+}
+
+export default function Conversations() {
+  const [sp, setSp] = useSearchParams()
+  const source = sp.get('source') || ''
+  const from = sp.get('from') || ''
+  const to = sp.get('to') || ''
+  const page = Math.max(0, Number(sp.get('page')) || 0)
+  const openId = Number(sp.get('id')) || 0
+
+  const set = (patch: Record<string, string | number>) => {
+    const next = new URLSearchParams(sp)
+    for (const [k, v] of Object.entries(patch)) v ? next.set(k, String(v)) : next.delete(k)
+    if (!('page' in patch) && !('id' in patch)) next.delete('page')
+    setSp(next, { replace: 'id' in patch })
+  }
+
+  const srcs = useAsync(api.sources, [])
+  const list = useAsync(
+    () => api.conversations({ source, date_from: toTs(from), date_to: toTs(to, true), offset: page * LIMIT, limit: LIMIT }),
+    [source, from, to, page],
+  )
+  const nameOf = (k: string) => srcs.data?.find((s) => s.source === k)?.name || k.replace(/^web:/, '')
+  const total = list.data?.total || 0
+  const pages = Math.max(1, Math.ceil(total / LIMIT))
+
+  const exportPage = () =>
+    list.data && exportXlsx(
+      list.data.conversations.map((c: Conversation) => ({
+        'Mã': c.id, 'Người dân': c.user?.display_name || c.user_id, 'Nguồn': nameOf(sourceOf(c).key),
+        'Số tin nhắn': c.message_count, 'Trạng thái': c.status, 'Bắt đầu': fmtTime(c.started_at), 'Gần nhất': fmtTime(c.last_message_at),
+      })),
+      'Danh sach', `hoi-thoai-trang-${page + 1}.xlsx`)
+
+  return (
+    <>
+      <PageHeader
+        title="Hội thoại"
+        desc="Lịch sử hỏi đáp của người dân, lọc theo nguồn và thời gian."
+        actions={
+          <button className="btn-ghost" onClick={exportPage} disabled={!list.data?.conversations.length}>
+            <Download className="h-4 w-4" aria-hidden /> Xuất trang này
+          </button>
+        }
+      />
+
+      <div className="card mb-4 grid gap-3 p-4 sm:grid-cols-[minmax(0,1fr)_170px_170px_auto] sm:items-end">
+        <div>
+          <label htmlFor="f-src" className="label">Nguồn</label>
+          <select id="f-src" className="field" value={source} onChange={(e) => set({ source: e.target.value })}>
+            <option value="">Tất cả nguồn</option>
+            <option value="web">Tất cả cổng web</option>
+            <option value="zalo">Tất cả Zalo OA</option>
+            {srcs.data?.some((s) => s.kind === 'web') && (
+              <optgroup label="Cổng web">
+                {srcs.data.filter((s) => s.kind === 'web').map((s) => <option key={s.source} value={s.source}>{s.name}</option>)}
+              </optgroup>
+            )}
+            {srcs.data?.some((s) => s.kind === 'zalo') && (
+              <optgroup label="Zalo OA">
+                {srcs.data.filter((s) => s.kind === 'zalo').map((s) => <option key={s.source} value={s.source}>{s.name}</option>)}
+              </optgroup>
+            )}
+            {source && !['web', 'zalo'].includes(source) && srcs.data && !srcs.data.some((s) => s.source === source) && (
+              <option value={source}>{nameOf(source)}</option>
+            )}
+          </select>
+        </div>
+        <div>
+          <label htmlFor="f-from" className="label">Từ ngày</label>
+          <input id="f-from" type="date" className="field" value={from} max={to || undefined} onChange={(e) => set({ from: e.target.value })} />
+        </div>
+        <div>
+          <label htmlFor="f-to" className="label">Đến ngày</label>
+          <input id="f-to" type="date" className="field" value={to} min={from || undefined} onChange={(e) => set({ to: e.target.value })} />
+        </div>
+        <button className="btn-ghost" disabled={!source && !from && !to} onClick={() => setSp(new URLSearchParams())}>Xóa lọc</button>
+      </div>
+
+      <div className={`grid gap-4 ${openId ? 'lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]' : ''}`}>
+        <section className={`card ${openId ? 'hidden lg:block' : ''}`} aria-label="Danh sách hội thoại">
+          <div className="flex items-center justify-between border-b border-line px-4 py-3 text-sm text-muted" aria-live="polite">
+            <span>{list.data ? <><span className="num font-medium text-ink">{total.toLocaleString('vi-VN')}</span> hội thoại</> : 'Đang tải...'}</span>
+            <span className="num">Trang {page + 1}/{pages}</span>
+          </div>
+          {list.error ? (
+            <ErrorBox message={list.error} onRetry={list.reload} />
+          ) : !list.data ? (
+            <div className="space-y-3 p-4">{[0, 1, 2, 3, 4].map((i) => <div key={i} className="skeleton h-12" />)}</div>
+          ) : !list.data.conversations.length ? (
+            <Empty title="Không có hội thoại phù hợp" hint="Thử bỏ bớt bộ lọc hoặc chọn khoảng thời gian rộng hơn." />
+          ) : (
+            <ul className={`divide-y divide-line ${list.loading ? 'opacity-60' : ''}`}>
+              {list.data.conversations.map((c) => {
+                const s = sourceOf(c)
+                const active = c.id === openId
+                return (
+                  <li key={c.id}>
+                    <button onClick={() => set({ id: c.id })} aria-current={active || undefined}
+                      className={`w-full px-4 py-3 text-left transition-colors ${active ? 'bg-accent-soft' : 'hover:bg-sunken'}`}>
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="truncate text-sm font-medium">{c.user?.display_name || c.user_id || 'Khách ẩn danh'}</span>
+                        <span className="shrink-0 text-xs text-muted">{fmtAgo(c.last_message_at)}</span>
+                      </div>
+                      <div className="mt-1.5 flex items-center gap-2">
+                        <span className="min-w-0"><SourceBadge kind={s.kind} label={nameOf(s.key)} /></span>
+                        <StatusPill status={c.status} />
+                        <span className="num ml-auto shrink-0 text-xs text-muted">{c.message_count} tin</span>
+                      </div>
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+          <nav className="flex items-center justify-between border-t border-line px-4 py-3" aria-label="Phân trang">
+            <button className="btn-ghost h-9 px-3" disabled={page === 0} onClick={() => set({ page: page - 1 })}>
+              <ChevronLeft className="h-4 w-4" aria-hidden /> Trước
+            </button>
+            <button className="btn-ghost h-9 px-3" disabled={page + 1 >= pages} onClick={() => set({ page: page + 1 })}>
+              Sau <ChevronRight className="h-4 w-4" aria-hidden />
+            </button>
+          </nav>
+        </section>
+
+        {openId > 0 && <Transcript id={openId} nameOf={nameOf} onClose={() => set({ id: 0 })} />}
+      </div>
+    </>
+  )
+}

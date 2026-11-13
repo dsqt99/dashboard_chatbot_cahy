@@ -5,13 +5,7 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 3000,
-    proxy: {
-      '/api': {
-        target: 'http://localhost:5678',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, '')
-      }
-    }
-  }
+    // Admin API của service Zalo OA (cahy_zalo) chạy local ở 8081.
+    proxy: { '/admin': { target: process.env.ADMIN_API_URL || 'http://localhost:8081', changeOrigin: true } },
+  },
 })
-

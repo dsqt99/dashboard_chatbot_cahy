@@ -3,24 +3,11 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 COPY . .
-
-# Add ARGs for Vite build
-ARG VITE_RAG_GET_DOCUMENTS_URL
-ARG VITE_RAG_REMOVE_DOCUMENT_URL
-ARG VITE_RAG_UPLOAD_DOCUMENT_URL
-ARG VITE_RAG_DOCUMENT_PROCESSING_URL
-ARG VITE_SUPABASE_URL
-ARG VITE_SUPABASE_ANON_KEY
-ARG VITE_N8N_API_URL
-ARG VITE_N8N_API_KEY
-ARG VITE_CHAT_HISTORY_TABLE
-ARG VITE_PORTAL_MESSAGES_URL
-ARG VITE_ADMIN_USERNAME
-ARG VITE_ADMIN_PASSWORD
-
 RUN npm run build
 
 FROM nginx:1.27-alpine
-COPY nginx/default.conf /etc/nginx/conf.d/default.conf
+# Image nginx tự envsubst file trong /etc/nginx/templates khi khởi động.
+ENV ADMIN_API_UPSTREAM=http://zalo-oa:8081
+COPY nginx/default.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=build /app/dist /usr/share/nginx/html
 EXPOSE 80

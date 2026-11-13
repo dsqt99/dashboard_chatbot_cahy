@@ -2,99 +2,81 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Token màu (RGB) — một accent xanh ngành công an, xanh Zalo chỉ dùng để nhận diện nguồn. */
+:root {
+  --bg: 244 246 249;
+  --surface: 255 255 255;
+  --sunken: 238 241 245;
+  --line: 223 228 235;
+  --ink: 17 24 39;
+  --muted: 84 96 114;
+  --accent: 0 78 154;
+  --accent-soft: 229 239 250;
+  --zalo: 0 104 255;
+  --ok: 4 120 87;
+  --warn: 180 83 9;
+  --danger: 190 18 60;
+  --shadow: 15 23 42;
+  color-scheme: light;
+}
+
+.dark {
+  --bg: 11 15 22;
+  --surface: 18 24 33;
+  --sunken: 24 31 42;
+  --line: 38 48 62;
+  --ink: 231 236 243;
+  --muted: 150 163 182;
+  --accent: 96 165 250;
+  --accent-soft: 23 37 58;
+  --zalo: 96 152 255;
+  --ok: 52 211 153;
+  --warn: 251 191 36;
+  --danger: 251 113 133;
+  --shadow: 0 0 0;
+  color-scheme: dark;
+}
+
 @layer base {
   body {
-    @apply bg-gray-50 text-gray-900;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-      'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-      sans-serif;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
+    @apply bg-bg text-ink antialiased;
+    font-feature-settings: 'tnum' 0;
+  }
+  :focus-visible {
+    @apply outline-none ring-2 ring-accent ring-offset-2 ring-offset-bg;
   }
 }
 
-@layer utilities {
-  .animate-fade-in {
-    animation: fadeIn 0.3s ease-in-out;
+@layer components {
+  .card {
+    @apply rounded-xl bg-surface shadow-card;
   }
-  
-  .animate-slide-up {
-    animation: slideUp 0.3s ease-out;
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg px-3.5 h-10 text-sm font-medium transition-colors active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50;
   }
-  
-  .animate-scale-in {
-    animation: scaleIn 0.2s ease-out;
+  .btn-primary {
+    @apply btn bg-accent text-white hover:bg-accent/90 dark:text-bg;
   }
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
+  .btn-ghost {
+    @apply btn text-ink hover:bg-sunken border border-line bg-surface;
   }
-  to {
-    opacity: 1;
+  .field {
+    @apply h-10 w-full rounded-lg border border-line bg-surface px-3 text-sm text-ink placeholder:text-muted/70 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20;
   }
-}
-
-@keyframes slideUp {
-  from {
-    transform: translateY(10px);
-    opacity: 0;
+  .label {
+    @apply mb-1.5 block text-xs font-medium text-muted;
   }
-  to {
-    transform: translateY(0);
-    opacity: 1;
+  .num {
+    font-variant-numeric: tabular-nums;
+  }
+  .skeleton {
+    @apply animate-pulse rounded-md bg-sunken;
   }
 }
 
-@keyframes scaleIn {
-  from {
-    transform: scale(0.95);
-    opacity: 0;
-  }
-  to {
-    transform: scale(1);
-    opacity: 1;
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
   }
 }
-
-/* Scrollbar styling */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-::-webkit-scrollbar-track {
-  @apply bg-gray-100;
-}
-
-::-webkit-scrollbar-thumb {
-  @apply bg-gray-300 rounded-full;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  @apply bg-gray-400;
-}
-
-/* Loading skeleton */
-@keyframes shimmer {
-  0% {
-    background-position: -1000px 0;
-  }
-  100% {
-    background-position: 1000px 0;
-  }
-}
-
-.skeleton {
-  background: linear-gradient(
-    to right,
-    #f0f0f0 0%,
-    #e0e0e0 20%,
-    #f0f0f0 40%,
-    #f0f0f0 100%
-  );
-  background-size: 1000px 100%;
-  animation: shimmer 2s infinite;
-}
-

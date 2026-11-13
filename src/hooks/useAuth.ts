@@ -1,27 +1,31 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { api, auth, type User } from '../lib/api'
 
-const AUTH_KEY = 'dashboard_auth'
-
+/** Phiên đăng nhập bằng JWT của admin API (tài khoản dùng chung với trang quản trị Zalo OA). */
 export function useAuth() {
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    return sessionStorage.getItem(AUTH_KEY) === 'true'
-  })
+  const [user, setUser] = useState<User | null>(null)
+  const [checking, setChecking] = useState(!!auth.get())
 
-  const login = (username: string, password: string): boolean => {
-    const validUser = import.meta.env.VITE_ADMIN_USERNAME
-    const validPass = import.meta.env.VITE_ADMIN_PASSWORD
-    if (username === validUser && password === validPass) {
-      sessionStorage.setItem(AUTH_KEY, 'true')
-      setIsAuthenticated(true)
-      return true
-    }
-    return false
-  }
+  useEffect(() => {
+    if (!auth.get()) return
+    api.me().then(setUser).catch(() => auth.clear()).finally(() => setChecking(false))
+  }, [])
 
-  const logout = () => {
-    sessionStorage.removeItem(AUTH_KEY)
-    setIsAuthenticated(false)
-  }
+  useEffect(() => {
+    const onExpired = () => setUser(null)
+    window.addEventListener('auth:expired', onExpired)
+    return () => window.removeEventListener('auth:expired', onExpired)
+  }, [])
 
-  return { isAuthenticated, login, logout }
+  const login = useCallback((token: string, u: User) => {
+    auth.set(token)
+    setUser(u)
+  }, [])
+
+  const logout = useCallback(() => {
+    auth.clear()
+    setUser(null)
+  }, [])
+
+  return { user, checking, login, logout }
 }

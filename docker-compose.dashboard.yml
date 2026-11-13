@@ -14,12 +14,10 @@ services:
       - "traefik.http.routers.dashboard-web-http.entrypoints=web"
       - "traefik.http.routers.dashboard-web-http.middlewares=dashboard-web-https-redirect"
       - "traefik.http.middlewares.dashboard-web-https-redirect.redirectscheme.scheme=https"
-    env_file:
-      - .env
+    environment:
+      ADMIN_API_UPSTREAM: ${ADMIN_API_UPSTREAM:-http://zalo-oa:8081}
     networks:
       - proxy-net
-    ports:
-      - "8000:8000"
     restart: unless-stopped
 
   dashboard-backend:
