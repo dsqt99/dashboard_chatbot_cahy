@@ -27,5 +27,5 @@ export function useAuth() {
     setUser(null)
   }, [])
 
-  return { user, checking, login, logout }
+  return { user, checking, login, logout, updateUser: setUser }
 }

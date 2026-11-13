@@ -1,14 +1,39 @@
-import { FileText, LayoutDashboard, LogOut, Menu, MessagesSquare, Moon, Radio, Sun, X } from 'lucide-react'
-import { useEffect, useState, type ReactNode } from 'react'
+import {
+  Activity,
+  Bot,
+  ChevronsUpDown,
+  FileText,
+  FlaskConical,
+  LayoutDashboard,
+  LogOut,
+  Menu,
+  MessageSquarePlus,
+  MessagesSquare,
+  Moon,
+  Radio,
+  Sun,
+  UserCog,
+  Users,
+  X,
+} from 'lucide-react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import type { User } from '../lib/api'
+import ProfileModal from './ProfileModal'
 
 const NAV = [
   { to: '/', label: 'Tổng quan', icon: LayoutDashboard },
   { to: '/sources', label: 'Nguồn chatbot', icon: Radio },
+  { to: '/oas', label: 'Quản lý Zalo OA', icon: MessageSquarePlus },
+  { to: '/agents', label: 'Quản lý Agent', icon: Bot },
+  { to: '/agent-test', label: 'Test Agent', icon: FlaskConical },
   { to: '/conversations', label: 'Hội thoại', icon: MessagesSquare },
   { to: '/documents', label: 'Tài liệu tri thức', icon: FileText },
+  { to: '/operations', label: 'Vận hành', icon: Activity },
+  { to: '/users', label: 'Quản lý tài khoản', icon: Users, adminOnly: true },
 ]
+
+const item = 'flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-sm text-ink hover:bg-sunken'
 
 function useTheme() {
   const [dark, setDark] = useState(() => {
@@ -42,13 +67,39 @@ export function Brand() {
   )
 }
 
-export default function Layout({ user, onLogout, children }: { user: User; onLogout: () => void; children: ReactNode }) {
+export default function Layout({
+  user,
+  onLogout,
+  onUserUpdate,
+  children,
+}: {
+  user: User
+  onLogout: () => void
+  onUserUpdate: (u: User) => void
+  children: ReactNode
+}) {
   const [open, setOpen] = useState(false)
+  const [profileOpen, setProfileOpen] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
   const [dark, setDark] = useTheme()
   const { pathname } = useLocation()
 
   useEffect(() => {
+    if (!menuOpen) return
+    const away = (e: PointerEvent) => !menuRef.current?.contains(e.target as Node) && setMenuOpen(false)
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setMenuOpen(false)
+    document.addEventListener('pointerdown', away)
+    document.addEventListener('keydown', esc)
+    return () => {
+      document.removeEventListener('pointerdown', away)
+      document.removeEventListener('keydown', esc)
+    }
+  }, [menuOpen])
+
+  useEffect(() => {
     setOpen(false)
+    setMenuOpen(false)
     document.getElementById('main')?.focus()
   }, [pathname])
 
@@ -57,8 +108,8 @@ export default function Layout({ user, onLogout, children }: { user: User; onLog
       <div className="px-5 py-5">
         <Brand />
       </div>
-      <nav className="flex-1 space-y-1 px-3" aria-label="Điều hướng chính">
-        {NAV.map(({ to, label, icon: Icon }) => (
+      <nav className="flex-1 space-y-1 overflow-y-auto px-3" aria-label="Điều hướng chính">
+        {NAV.filter((item) => !item.adminOnly || user.role === 'admin').map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}
             to={to}
@@ -74,28 +125,49 @@ export default function Layout({ user, onLogout, children }: { user: User; onLog
           </NavLink>
         ))}
       </nav>
-      <div className="space-y-1 border-t border-line p-3">
-        <button
-          onClick={() => setDark(!dark)}
-          className="flex h-10 w-full items-center gap-3 rounded-lg px-3 text-sm text-muted hover:bg-sunken hover:text-ink"
-        >
-          {dark ? <Sun className="h-[18px] w-[18px]" aria-hidden /> : <Moon className="h-[18px] w-[18px]" aria-hidden />}
-          {dark ? 'Giao diện sáng' : 'Giao diện tối'}
-        </button>
-        <div className="flex items-center gap-3 rounded-lg px-3 py-2">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent-soft text-xs font-semibold uppercase text-accent">
-            {(user.full_name || user.username).slice(0, 1)}
+      <div className="relative border-t border-line p-3" ref={menuRef}>
+        {menuOpen && (
+          <div role="menu" aria-label="Tài khoản"
+            className="absolute inset-x-3 bottom-full mb-2 overflow-hidden rounded-xl border border-line bg-surface p-1.5 shadow-pop">
+            <div className="border-b border-line px-3 pb-2.5 pt-1.5">
+              <p className="truncate text-sm font-medium">{user.full_name || user.username}</p>
+              <p className="truncate text-xs text-muted">{user.department_name || 'Toàn hệ thống'}</p>
+            </div>
+            <div className="pt-1.5">
+              <button role="menuitem" autoFocus onClick={() => { setMenuOpen(false); setProfileOpen(true) }} className={item}>
+                <UserCog className="h-4 w-4" aria-hidden /> Cài đặt tài khoản
+              </button>
+              <button role="menuitem" onClick={() => setDark(!dark)} className={item}>
+                {dark ? <Sun className="h-4 w-4" aria-hidden /> : <Moon className="h-4 w-4" aria-hidden />}
+                {dark ? 'Giao diện sáng' : 'Giao diện tối'}
+              </button>
+              <div className="my-1.5 border-t border-line" />
+              <button role="menuitem" onClick={onLogout} className={`${item} text-danger hover:bg-danger/10 hover:text-danger`}>
+                <LogOut className="h-4 w-4" aria-hidden /> Đăng xuất
+              </button>
+            </div>
           </div>
+        )}
+        <button
+          type="button"
+          onClick={() => setMenuOpen(!menuOpen)}
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          className={`flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-colors hover:bg-sunken ${menuOpen ? 'bg-sunken' : ''}`}
+        >
+          {user.avatar ? (
+            <img src={user.avatar} alt="" className="h-9 w-9 shrink-0 rounded-full border border-line object-cover" />
+          ) : (
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent-soft text-sm font-semibold uppercase text-accent">
+              {(user.full_name || user.username).slice(0, 1)}
+            </div>
+          )}
           <div className="min-w-0 flex-1 leading-tight">
             <p className="truncate text-sm font-medium">{user.full_name || user.username}</p>
-            <p className="truncate text-xs text-muted">
-              {user.role === 'admin' ? 'Quản trị viên' : user.department_name || 'Cán bộ'}
-            </p>
+            <p className="truncate text-xs text-muted">{user.role === 'admin' ? 'Quản trị viên' : 'Cán bộ'} · @{user.username}</p>
           </div>
-          <button onClick={onLogout} className="rounded-md p-2 text-muted hover:bg-danger/10 hover:text-danger" aria-label="Đăng xuất" title="Đăng xuất">
-            <LogOut className="h-4 w-4" aria-hidden />
-          </button>
-        </div>
+          <ChevronsUpDown className="h-4 w-4 shrink-0 text-muted" aria-hidden />
+        </button>
       </div>
     </div>
   )
@@ -130,6 +202,8 @@ export default function Layout({ user, onLogout, children }: { user: User; onLog
       <main id="main" tabIndex={-1} className="mx-auto max-w-7xl px-4 py-6 outline-none sm:px-6 lg:px-8 lg:py-8">
         {children}
       </main>
+
+      <ProfileModal open={profileOpen} user={user} onClose={() => setProfileOpen(false)} onUserUpdate={onUserUpdate} />
     </div>
   )
 }

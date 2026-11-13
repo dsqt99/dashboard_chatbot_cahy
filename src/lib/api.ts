@@ -19,7 +19,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers)
   const token = auth.get()
   if (token) headers.set('Authorization', `Bearer ${token}`)
-  if (init.body) headers.set('Content-Type', 'application/json')
+  if (init.body && !(init.body instanceof FormData)) headers.set('Content-Type', 'application/json')
   const res = await fetch(`/admin${path}`, { ...init, headers })
   if (res.status === 401 && token) {
     auth.clear()
@@ -45,12 +45,141 @@ const qs = (params: Record<string, string | number | undefined>) => {
   return s ? `?${s}` : ''
 }
 
+export type Role = 'admin' | 'staff'
+export type UserStatus = 'pending' | 'active' | 'rejected' | 'suspended'
+
 export interface User {
   id: number
   username: string
   full_name: string
-  role: 'admin' | 'staff'
+  avatar?: string
+  role: Role
+  status?: UserStatus
+  department_id?: string
   department_name: string
+  approved_by?: string
+  approved_at?: number
+  last_login_at?: number
+  created_at?: number
+}
+
+export interface OA {
+  oa_id: string
+  name: string
+  agent_enabled: boolean
+  webhook_verified: boolean
+  has_token: boolean
+  token_expires_at?: number | null
+  created_at?: number | null
+  message_count?: number
+  agent_id?: string | null
+  department_id?: string | null
+  department_name?: string | null
+  reply_mode?: 'all' | 'whitelist'
+  allowed_user_ids?: string[]
+}
+
+export interface OAStats extends OA {
+  oauth_callback_url: string
+  webhook_url: string
+}
+
+export interface OACredentialStatus {
+  oa_id: string
+  zalo_app_id: string
+  has_app_secret: boolean
+  has_oa_secret_key: boolean
+  has_token: boolean
+}
+
+export interface Agent {
+  agent_id: string
+  name: string
+  system_prompt?: string
+  department_id?: string | null
+  department_name?: string | null
+  knowledge_type?: string | null
+  document_ids?: string[] | null
+  created_at?: number | null
+}
+
+export interface Department {
+  id: string
+  name: string
+  description?: string
+  employee_count?: number
+}
+
+export interface Citation {
+  title?: string
+  source?: string
+  url?: string
+  snippet?: string
+}
+
+export interface AgentTestResponse {
+  reply: string
+  needs_human?: boolean
+  citations?: Citation[]
+}
+
+export interface QueueStatus {
+  pending: number
+  processing: number
+  failed: number
+  worker_active: boolean
+  last_success_at: number
+  last_error_at: number
+}
+
+export interface FailedWebhook {
+  id: string
+  oa_id: string
+  event_name: string
+  user_id: string
+  attempt: number
+  queued_at: number
+}
+
+export interface DependencyStatus {
+  ok: boolean
+  detail: string
+}
+
+export interface SystemStatusResponse {
+  service: DependencyStatus
+  database: DependencyStatus
+  redis: DependencyStatus
+  chat: DependencyStatus
+  worker: DependencyStatus
+}
+
+export interface OABody {
+  name?: string
+  agent_id?: string
+  department_id?: string
+  department_name?: string
+  reply_mode?: 'all' | 'whitelist'
+  allowed_user_ids?: string[]
+}
+
+export interface AgentBody {
+  name?: string
+  system_prompt?: string
+  department_id?: string
+  department_name?: string
+  knowledge_type?: string
+  document_ids?: string[]
+}
+
+export interface UserBody {
+  full_name?: string
+  avatar?: string
+  role?: Role
+  status?: UserStatus
+  department_id?: string
+  department_name?: string
+  password?: string
 }
 
 export interface Source {
@@ -110,6 +239,18 @@ export const api = {
       body: JSON.stringify({ username, password, totp_code }),
     }),
   me: () => request<User>('/me'),
+  updateProfile: (body: { full_name?: string; avatar?: string }) =>
+    request<{ ok: boolean; user?: User | null }>('/me', { method: 'PUT', body: JSON.stringify(body) }),
+  uploadAvatar: (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return request<{ ok: boolean; avatar_url: string; user?: User | null }>('/me/avatar', {
+      method: 'POST',
+      body: form,
+    })
+  },
+  changePassword: (body: { current_password: string; new_password: string }) =>
+    request<{ ok: boolean }>('/me/change-password', { method: 'POST', body: JSON.stringify(body) }),
   overview: () => request<Overview>('/overview'),
   sources: () => request<{ sources: Source[] }>('/sources').then((r) => r.sources),
   daily: (days: number, source = '') =>
@@ -119,7 +260,85 @@ export const api = {
   conversation: (id: number) => request<Conversation>(`/conversations/${id}`),
   messages: (id: number) =>
     request<{ messages: Message[] }>(`/conversations/${id}/messages?limit=500`).then((r) => r.messages),
-  scopes: () => request<{ scopes: { name: string; description?: string }[] }>('/scopes').then((r) => r.scopes),
+  scopes: () => request<{ scopes: { slug?: string; name: string; description?: string; doc_count?: number }[] }>('/scopes').then((r) => r.scopes),
   documents: (scope = '') =>
     request<{ documents: Doc[] }>(`/documents${qs({ scope })}`).then((r) => r.documents),
+  departments: () => request<{ departments: Department[] }>('/departments').then((r) => r.departments),
+
+  // Zalo OA
+  listOAs: () => request<{ oas: OA[] }>('/oa').then((r) => r.oas),
+  createOA: (body: {
+    oa_id: string
+    name: string
+    agent_id?: string
+    department_id?: string
+    department_name?: string
+    reply_mode?: 'all' | 'whitelist'
+    allowed_user_ids?: string[]
+  }) => request<{ ok: boolean; oa_id?: string }>('/oa', { method: 'POST', body: JSON.stringify(body) }),
+  updateOA: (oaId: string, body: OABody) =>
+    request<{ ok: boolean }>(`/oa/${encodeURIComponent(oaId)}`, { method: 'PUT', body: JSON.stringify(body) }),
+  deleteOA: (oaId: string) =>
+    request<{ ok: boolean }>(`/oa/${encodeURIComponent(oaId)}`, { method: 'DELETE' }),
+  toggleOA: (oaId: string, agent_enabled: boolean) =>
+    request<{ ok?: boolean; agent_enabled?: boolean }>(`/oa/${encodeURIComponent(oaId)}/toggle`, {
+      method: 'POST',
+      body: JSON.stringify({ agent_enabled }),
+    }),
+  oaStats: (oaId: string) => request<OAStats>(`/oa/${encodeURIComponent(oaId)}/stats`),
+  getOACredentials: (oaId: string) => request<OACredentialStatus>(`/oa/${encodeURIComponent(oaId)}/credentials`),
+  updateOACredentials: (oaId: string, zalo_app_id: string, app_secret = '', oa_secret_key = '') =>
+    request<OACredentialStatus>(`/oa/${encodeURIComponent(oaId)}/credentials`, {
+      method: 'PUT',
+      body: JSON.stringify({ zalo_app_id, app_secret, oa_secret_key }),
+    }),
+  deleteOACredentials: (oaId: string) =>
+    request<{ ok: boolean }>(`/oa/${encodeURIComponent(oaId)}/credentials`, { method: 'DELETE' }),
+  oauthUrl: (oaId: string) => request<{ oauth_url: string }>(`/oa/${encodeURIComponent(oaId)}/oauth-url`),
+  disconnectOA: (oaId: string) =>
+    request<{ ok: boolean }>(`/oa/${encodeURIComponent(oaId)}/disconnect`, { method: 'POST' }),
+
+  // Agents
+  listAgents: () => request<{ agents: Agent[] }>('/agent').then((r) => r.agents),
+  getAgent: (agentId: string) => request<Agent>(`/agent/${encodeURIComponent(agentId)}`),
+  createAgent: (body: AgentBody) =>
+    request<{ ok: boolean; agent_id?: string }>('/agent', { method: 'POST', body: JSON.stringify(body) }),
+  updateAgent: (agentId: string, body: AgentBody) =>
+    request<{ ok: boolean }>(`/agent/${encodeURIComponent(agentId)}`, { method: 'PUT', body: JSON.stringify(body) }),
+  deleteAgent: (agentId: string) =>
+    request<{ ok: boolean }>(`/agent/${encodeURIComponent(agentId)}`, { method: 'DELETE' }),
+  testAgent: (agentId: string, body: { message: string; session_id: string }) =>
+    request<AgentTestResponse>(`/agent/${encodeURIComponent(agentId)}/test`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  // Vận hành & Webhook
+  systemStatus: () => request<SystemStatusResponse>('/system/status'),
+  webhookStatus: () => request<QueueStatus>('/webhooks/status'),
+  listFailedWebhooks: (offset = 0, limit = 50) =>
+    request<{ events: FailedWebhook[]; total: number }>(`/webhooks/failed?offset=${offset}&limit=${limit}`),
+  retryFailedWebhook: (eventId: string) =>
+    request<{ ok: boolean }>(`/webhooks/failed/${encodeURIComponent(eventId)}/retry`, { method: 'POST' }),
+  deleteFailedWebhook: (eventId: string) =>
+    request<{ ok: boolean }>(`/webhooks/failed/${encodeURIComponent(eventId)}`, { method: 'DELETE' }),
+
+  // Quản lý tài khoản (Admin)
+  listUsers: (status = '') =>
+    request<{ users: User[]; pending_count: number }>(`/users${status ? `?status=${encodeURIComponent(status)}` : ''}`),
+  createUser: (body: {
+    username: string
+    password: string
+    full_name?: string
+    role?: Role
+    department_id?: string
+    department_name?: string
+  }) => request<{ ok: boolean; user?: User | null }>('/users', { method: 'POST', body: JSON.stringify(body) }),
+  updateUser: (userId: number, body: UserBody) =>
+    request<{ ok: boolean; user?: User | null }>(`/users/${userId}`, { method: 'PUT', body: JSON.stringify(body) }),
+  approveUser: (userId: number) =>
+    request<{ ok: boolean; user?: User | null }>(`/users/${userId}/approve`, { method: 'POST' }),
+  rejectUser: (userId: number) =>
+    request<{ ok: boolean; user?: User | null }>(`/users/${userId}/reject`, { method: 'POST' }),
+  deleteUser: (userId: number) => request<{ ok: boolean }>(`/users/${userId}`, { method: 'DELETE' }),
 }
