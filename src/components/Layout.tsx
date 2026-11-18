@@ -1,4 +1,4 @@
-import { FileText, LayoutDashboard, LogOut, Menu, MessagesSquare, Moon, Radio, Sun, X } from 'lucide-react'
+import { FileText, FlaskConical, LayoutDashboard, LogOut, Menu, MessagesSquare, Moon, Radio, Sun, X } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import type { User } from '../lib/api'
@@ -6,6 +6,7 @@ import type { User } from '../lib/api'
 const NAV = [
   { to: '/', label: 'Tổng quan', icon: LayoutDashboard },
   { to: '/sources', label: 'Nguồn chatbot', icon: Radio },
+  { to: '/agent-test', label: 'Test Agent', icon: FlaskConical },
   { to: '/conversations', label: 'Hội thoại', icon: MessagesSquare },
   { to: '/documents', label: 'Tài liệu tri thức', icon: FileText },
 ]

@@ -2,6 +2,7 @@ import { Loader2 } from 'lucide-react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import Layout from './components/Layout'
 import { useAuth } from './hooks/useAuth'
+import AgentTest from './pages/AgentTest'
 import Conversations from './pages/Conversations'
 import Documents from './pages/Documents'
 import LoginPage from './pages/LoginPage'
@@ -28,6 +29,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<Overview />} />
             <Route path="/sources" element={<Sources />} />
+            <Route path="/agent-test" element={<AgentTest />} />
             <Route path="/conversations" element={<Conversations />} />
             <Route path="/documents" element={<Documents />} />
             <Route path="*" element={<Navigate to="/" replace />} />

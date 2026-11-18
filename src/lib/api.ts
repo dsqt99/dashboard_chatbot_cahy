@@ -104,6 +104,24 @@ export interface Doc {
   knowledge_type: string
 }
 
+interface TestAgentOption {
+  agent_id: string
+  name: string
+}
+
+export interface Citation {
+  title?: string
+  source?: string
+  url?: string
+  snippet?: string
+}
+
+export interface AgentTestResponse {
+  reply: string
+  needs_human?: boolean
+  citations?: Citation[]
+}
+
 export const api = {
   login: (username: string, password: string, totp_code = '') =>
     request<{ token: string; totp_required: boolean; user?: User }>('/login', {
@@ -128,6 +146,14 @@ export const api = {
     request<{ ok: boolean; status: string }>(`/conversations/${id}/status`, {
       method: 'POST', body: JSON.stringify({ status: 'closed' }),
     }),
+  listAgents: () => request<{ agents: TestAgentOption[] }>('/agent').then((r) => r.agents),
+  testAgent: (agentId: string, body: { message: string; session_id: string }, signal?: AbortSignal) =>
+    request<AgentTestResponse>(`/agent/${encodeURIComponent(agentId)}/test`, {
+      method: 'POST',
+      signal,
+      body: JSON.stringify(body),
+    }),
+
   scopes: () => request<{ scopes: { name: string; description?: string }[] }>('/scopes').then((r) => r.scopes),
   documents: (scope = '') =>
     request<{ documents: Doc[] }>(`/documents${qs({ scope })}`).then((r) => r.documents),
