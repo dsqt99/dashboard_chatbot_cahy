@@ -1,5 +1,5 @@
 import { Bot, ExternalLink, RotateCcw, Send, User as UserIcon } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Empty, ErrorBox, PageHeader } from '../components/ui'
 import { useAsync } from '../hooks/useAsync'
 import { api, type Citation } from '../lib/api'
@@ -21,6 +21,7 @@ export default function AgentTest() {
   const [messages, setMessages] = useState<TestMsg[]>([])
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+  const activeRequest = useRef<AbortController | null>(null)
 
   useEffect(() => {
     if (!agentId && agents.data?.length) {
@@ -28,30 +29,48 @@ export default function AgentTest() {
     }
   }, [agentId, agents.data])
 
-  const resetChat = () => {
+  useEffect(() => () => {
+    activeRequest.current?.abort()
+    activeRequest.current = null
+  }, [])
+
+  const resetChat = (nextSessionId = newSessionId()) => {
+    activeRequest.current?.abort()
+    activeRequest.current = null
     setMessages([])
-    setSessionId(newSessionId())
+    setSessionId(nextSessionId)
+    setInput('')
     setErr('')
+    setBusy(false)
   }
 
   const send = async (e: React.FormEvent) => {
     e.preventDefault()
     const text = input.trim()
-    if (!text || !agentId || busy) return
+    const session = sessionId.trim()
+    if (!text || !agentId || !session || activeRequest.current) return
+    const controller = new AbortController()
+    activeRequest.current = controller
     setInput('')
     setErr('')
     setMessages((prev) => [...prev, { role: 'user', content: text }])
     setBusy(true)
     try {
-      const res = await api.testAgent(agentId, { message: text, session_id: sessionId })
+      const res = await api.testAgent(agentId, { message: text, session_id: session }, controller.signal)
+      if (activeRequest.current !== controller) return
       setMessages((prev) => [
         ...prev,
         { role: 'assistant', content: res.reply, needsHuman: res.needs_human, citations: res.citations },
       ])
     } catch (ex) {
-      setErr(ex instanceof Error ? ex.message : 'Gửi tin nhắn thử thất bại')
+      if (activeRequest.current === controller) {
+        setErr(ex instanceof Error ? ex.message : 'Gửi tin nhắn thử thất bại')
+      }
     } finally {
-      setBusy(false)
+      if (activeRequest.current === controller) {
+        activeRequest.current = null
+        setBusy(false)
+      }
     }
   }
 
@@ -61,7 +80,7 @@ export default function AgentTest() {
         title="Test Agent"
         desc="Chạy thử hội thoại trực tiếp với Agent trước khi gắn vào Zalo OA."
         actions={
-          <button type="button" className="btn-ghost" onClick={resetChat}>
+          <button type="button" className="btn-ghost" onClick={() => resetChat()}>
             <RotateCcw className="h-4 w-4" aria-hidden /> Phiên mới
           </button>
         }
@@ -88,7 +107,7 @@ export default function AgentTest() {
             </div>
             <div>
               <label htmlFor="t-sess" className="label">Session ID</label>
-              <input id="t-sess" className="field font-mono text-xs" value={sessionId} onChange={(e) => setSessionId(e.target.value)} />
+              <input id="t-sess" className="field font-mono text-xs" value={sessionId} onChange={(e) => resetChat(e.target.value)} />
             </div>
           </div>
 
@@ -155,7 +174,7 @@ export default function AgentTest() {
                 onChange={(e) => setInput(e.target.value)}
                 disabled={busy}
               />
-              <button type="submit" className="btn-primary px-4" disabled={busy || !input.trim()}>
+              <button type="submit" className="btn-primary px-4" disabled={busy || !agentId || !sessionId.trim() || !input.trim()}>
                 <Send className="h-4 w-4" aria-hidden /> Gửi
               </button>
             </form>

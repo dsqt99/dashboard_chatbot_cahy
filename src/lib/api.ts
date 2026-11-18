@@ -351,9 +351,10 @@ export const api = {
     request<{ ok: boolean }>(`/agent/${encodeURIComponent(agentId)}`, { method: 'PUT', body: JSON.stringify(body) }),
   deleteAgent: (agentId: string) =>
     request<{ ok: boolean }>(`/agent/${encodeURIComponent(agentId)}`, { method: 'DELETE' }),
-  testAgent: (agentId: string, body: { message: string; session_id: string }) =>
+  testAgent: (agentId: string, body: { message: string; session_id: string }, signal?: AbortSignal) =>
     request<AgentTestResponse>(`/agent/${encodeURIComponent(agentId)}/test`, {
       method: 'POST',
+      signal,
       body: JSON.stringify(body),
     }),
 
