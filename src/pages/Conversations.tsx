@@ -1,5 +1,5 @@
 import { ArrowLeft, ChevronLeft, ChevronRight, Download, X } from 'lucide-react'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Empty, ErrorBox, PageHeader, SourceBadge, StatusPill, fmtAgo, fmtTime, sourceOf } from '../components/ui'
 import { useAsync } from '../hooks/useAsync'
@@ -19,10 +19,19 @@ async function exportXlsx(rows: Record<string, unknown>[], sheet: string, file: 
   XLSX.writeFile(wb, file)
 }
 
-function Transcript({ id, nameOf, onClose }: { id: number; nameOf: (k: string) => string; onClose: () => void }) {
+function Transcript({ id, nameOf, onClose, onUpdated }: {
+  id: number
+  nameOf: (k: string) => string
+  onClose: () => void
+  onUpdated: () => void
+}) {
   const conv = useAsync(() => api.conversation(id), [id])
   const msgs = useAsync(() => api.messages(id), [id])
   const end = useRef<HTMLDivElement>(null)
+  const [draft, setDraft] = useState('')
+  const [pending, setPending] = useState<'reply' | 'close' | ''>('')
+  const [actionError, setActionError] = useState('')
+  const [notice, setNotice] = useState('')
   useEffect(() => {
     end.current?.scrollIntoView({ block: 'end' })
   }, [msgs.data])
@@ -31,9 +40,43 @@ function Transcript({ id, nameOf, onClose }: { id: number; nameOf: (k: string) =
   const s = c && sourceOf(c)
   const who = c ? whoOf(c) : ''
 
+  const canReply = !!c?.oa_id && c.status !== 'closed'
+
+  const handleAction = async (action: 'reply' | 'close') => {
+    if (pending || !c || c.status === 'closed') return
+    const message = draft.trim()
+    if (action === 'reply' && (!canReply || !message)) return
+    setPending(action)
+    setActionError('')
+    setNotice('')
+    try {
+      if (action === 'reply') {
+        await api.replyToConversation(id, message)
+        setDraft('')
+        setNotice('Đã gửi qua Zalo.')
+        msgs.reload()
+      } else {
+        await api.closeConversation(id)
+        setNotice('Đã đóng hội thoại.')
+      }
+      conv.reload()
+      onUpdated()
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Thao tác thất bại. Vui lòng thử lại.')
+    } finally {
+      setPending('')
+    }
+  }
+
+  const sendReply = (event: FormEvent) => {
+    event.preventDefault()
+    void handleAction('reply')
+  }
+
+
   return (
     <section className="card flex min-h-[60dvh] flex-col lg:sticky lg:top-6 lg:h-[calc(100dvh-3rem)]" aria-label="Nội dung hội thoại">
-      <header className="flex items-start gap-3 border-b border-line px-4 py-3">
+      <header className="flex shrink-0 items-start gap-3 border-b border-line px-4 py-3">
         <button onClick={onClose} className="rounded-lg p-2 hover:bg-sunken lg:hidden" aria-label="Quay lại danh sách">
           <ArrowLeft className="h-4 w-4" aria-hidden />
         </button>
@@ -44,10 +87,15 @@ function Transcript({ id, nameOf, onClose }: { id: number; nameOf: (k: string) =
               <div className="mt-1 flex flex-wrap items-center gap-2">
                 <SourceBadge kind={s!.kind} label={nameOf(s!.key)} />
                 <StatusPill status={c.status} />
+                {c.status === 'needs_human' && !!c.handoff_since && (
+                  <span title={fmtTime(c.handoff_since)}>Cần hỗ trợ từ {fmtTime(c.handoff_since)}</span>
+                )}
                 {c.title && <span className="text-xs text-muted">{who}</span>}
                 <span className="text-xs text-muted">Bắt đầu {fmtTime(c.started_at)}</span>
               </div>
             </>
+          ) : conv.error ? (
+            <ErrorBox message={conv.error} onRetry={conv.reload} />
           ) : (
             <div className="skeleton h-10 w-48" />
           )}
@@ -62,7 +110,7 @@ function Transcript({ id, nameOf, onClose }: { id: number; nameOf: (k: string) =
           <X className="h-4 w-4" aria-hidden />
         </button>
       </header>
-      <div className="flex-1 space-y-3 overflow-y-auto bg-sunken/50 px-4 py-4">
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-sunken/50 px-4 py-4">
         {msgs.error ? (
           <ErrorBox message={msgs.error} onRetry={msgs.reload} />
         ) : !msgs.data ? (
@@ -86,6 +134,38 @@ function Transcript({ id, nameOf, onClose }: { id: number; nameOf: (k: string) =
         )}
         <div ref={end} />
       </div>
+      {c && (c.status !== 'closed' || notice || actionError) && (
+        <footer className="shrink-0 space-y-2 border-t border-line p-3 sm:px-4">
+          {actionError && <p role="alert" className="text-sm text-danger">{actionError}</p>}
+          {notice && <p role="status" className="text-sm text-ok">{notice}</p>}
+          {c.status !== 'closed' && (
+            <form className="space-y-2" onSubmit={sendReply}>
+              {canReply ? (
+                <div>
+                  <label htmlFor="officer-reply" className="label">Trả lời qua Zalo</label>
+                  <textarea id="officer-reply" rows={2} maxLength={4000}
+                    className="field !h-auto !min-h-0 !max-h-32 resize-y py-2" value={draft}
+                    onChange={(event) => setDraft(event.target.value)} disabled={!!pending}
+                    placeholder="Nhập nội dung gửi cho người dân..." />
+                </div>
+              ) : (
+                <p className="text-sm text-muted">Hội thoại web. Đóng hội thoại sau khi đã xử lý qua kênh hỗ trợ phù hợp.</p>
+              )}
+              <div className="flex flex-wrap justify-end gap-2">
+                <button type="button" className="btn-ghost" onClick={() => void handleAction('close')}
+                  disabled={!!pending || conv.loading || !!draft.trim()}>
+                  {pending === 'close' ? 'Đang đóng...' : 'Đóng hội thoại'}
+                </button>
+                {canReply && (
+                  <button type="submit" className="btn-primary" disabled={!!pending || conv.loading || !draft.trim()}>
+                    {pending === 'reply' ? 'Đang gửi...' : 'Gửi qua Zalo'}
+                  </button>
+                )}
+              </div>
+            </form>
+          )}
+        </footer>
+      )}
     </section>
   )
 }
@@ -93,6 +173,7 @@ function Transcript({ id, nameOf, onClose }: { id: number; nameOf: (k: string) =
 export default function Conversations() {
   const [sp, setSp] = useSearchParams()
   const source = sp.get('source') || ''
+  const queue = sp.get('status') === 'needs_human'
   const from = sp.get('from') || ''
   const to = sp.get('to') || ''
   const page = Math.max(0, Number(sp.get('page')) || 0)
@@ -107,12 +188,15 @@ export default function Conversations() {
 
   const srcs = useAsync(api.sources, [])
   const list = useAsync(
-    () => api.conversations({ source, date_from: toTs(from), date_to: toTs(to, true), offset: page * LIMIT, limit: LIMIT }),
-    [source, from, to, page],
+    () => api.conversations({ source, status: queue ? 'needs_human' : '', date_from: toTs(from), date_to: toTs(to, true), offset: page * LIMIT, limit: LIMIT }),
+    [source, queue, from, to, page],
   )
   const nameOf = (k: string) => srcs.data?.find((s) => s.source === k)?.name || k.replace(/^web:/, '')
   const total = list.data?.total || 0
   const pages = Math.max(1, Math.ceil(total / LIMIT))
+  useEffect(() => {
+    if (!list.loading && list.data && page >= pages) set({ page: pages - 1 })
+  }, [list.loading, list.data, page, pages])
 
   const exportPage = () =>
     list.data && exportXlsx(
@@ -133,6 +217,22 @@ export default function Conversations() {
           </button>
         }
       />
+
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <div role="group" aria-label="Chế độ xem hội thoại" className="flex gap-1 rounded-lg bg-sunken p-1">
+          {[{ value: '', label: 'Tất cả' }, { value: 'needs_human', label: 'Cần xử lý' }].map(({ value, label }) => {
+            const active = queue === !!value
+            return (
+              <button key={value} type="button" aria-pressed={active} onClick={() => set({ status: value, page: 0, id: 0 })}
+                className={`rounded-md px-3 py-2 text-sm font-medium ${active ? 'bg-surface text-accent shadow-card' : 'text-muted hover:text-ink'}`}>
+                {label}
+              </button>
+            )
+          })}
+        </div>
+        {queue && <span className="text-sm text-muted">Chờ lâu nhất trước</span>}
+        <button type="button" className="btn-ghost ml-auto" onClick={list.reload} disabled={list.loading}>Làm mới</button>
+      </div>
 
       <div className="card mb-4 grid gap-3 p-4 sm:grid-cols-[minmax(0,1fr)_170px_170px_auto] sm:items-end">
         <div>
@@ -164,7 +264,7 @@ export default function Conversations() {
           <label htmlFor="f-to" className="label">Đến ngày</label>
           <input id="f-to" type="date" className="field" value={to} min={from || undefined} onChange={(e) => set({ to: e.target.value })} />
         </div>
-        <button className="btn-ghost" disabled={!source && !from && !to} onClick={() => setSp(new URLSearchParams())}>Xóa lọc</button>
+        <button className="btn-ghost" disabled={!source && !from && !to} onClick={() => set({ source: '', from: '', to: '', page: 0, id: 0 })}>Xóa lọc</button>
       </div>
 
       <div className={`grid gap-4 ${openId ? 'lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]' : ''}`}>
@@ -178,7 +278,8 @@ export default function Conversations() {
           ) : !list.data ? (
             <div className="space-y-3 p-4">{[0, 1, 2, 3, 4].map((i) => <div key={i} className="skeleton h-12" />)}</div>
           ) : !list.data.conversations.length ? (
-            <Empty title="Không có hội thoại phù hợp" hint="Thử bỏ bớt bộ lọc hoặc chọn khoảng thời gian rộng hơn." />
+            <Empty title={queue ? 'Không có hội thoại cần xử lý' : 'Không có hội thoại phù hợp'}
+              hint={source || from || to ? 'Thử bỏ bớt bộ lọc hoặc chọn khoảng thời gian rộng hơn.' : undefined} />
           ) : (
             <ul className={`divide-y divide-line ${list.loading ? 'opacity-60' : ''}`}>
               {list.data.conversations.map((c) => {
@@ -190,7 +291,10 @@ export default function Conversations() {
                       className={`w-full px-4 py-3 text-left transition-colors ${active ? 'bg-accent-soft' : 'hover:bg-sunken'}`}>
                       <div className="flex items-center justify-between gap-3">
                         <span className="truncate text-sm font-medium" title={c.title || undefined}>{c.title || whoOf(c)}</span>
-                        <span className="shrink-0 text-xs text-muted">{fmtAgo(c.last_message_at)}</span>
+                        <span className="mt-0.5 shrink-0 whitespace-nowrap text-xs text-muted"
+                          title={fmtTime(queue ? c.handoff_since || c.last_message_at : c.last_message_at)}>
+                          {queue && 'Chờ từ '}{fmtAgo(queue ? c.handoff_since || c.last_message_at : c.last_message_at)}
+                        </span>
                       </div>
                       <div className="mt-1.5 flex items-center gap-2">
                         <span className="min-w-0"><SourceBadge kind={s.kind} label={nameOf(s.key)} /></span>
@@ -214,7 +318,7 @@ export default function Conversations() {
           </nav>
         </section>
 
-        {openId > 0 && <Transcript id={openId} nameOf={nameOf} onClose={() => set({ id: 0 })} />}
+        {openId > 0 && <Transcript key={openId} id={openId} nameOf={nameOf} onClose={() => set({ id: 0 })} onUpdated={list.reload} />}
       </div>
     </>
   )
