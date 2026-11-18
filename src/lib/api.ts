@@ -15,7 +15,7 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function adminFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers)
   const token = auth.get()
   if (token) headers.set('Authorization', `Bearer ${token}`)
@@ -35,7 +35,11 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     }
     throw new ApiError(res.status, msg)
   }
-  return res.json()
+  return res
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  return (await adminFetch(path, init)).json()
 }
 
 const qs = (params: Record<string, string | number | undefined>) => {
@@ -74,6 +78,7 @@ export interface Conversation {
   message_count: number
   status: string
   handoff_since?: number
+  web_reply_available?: boolean
   started_at: number
   last_message_at: number
   user: { display_name: string; avatar: string; phone: string } | null
@@ -84,6 +89,8 @@ export interface Message {
   sender: 'user' | 'assistant' | 'officer' | 'staff' | 'system'
   content: string
   created_at: number
+  has_image?: boolean
+  metadata?: { citations?: Citation[] }
 }
 
 export interface Overview {
@@ -114,6 +121,10 @@ export interface Citation {
   source?: string
   url?: string
   snippet?: string
+  document_number?: string
+  sections?: string[]
+  pages?: string
+  url_verified?: boolean
 }
 
 export interface AgentTestResponse {
@@ -140,9 +151,11 @@ export const api = {
     request<{ messages: Message[]; next_before_id: number | null }>(
       `/conversations/${id}/messages${qs({ latest: 'true', limit, before_id: beforeId })}`,
     ),
-  replyToConversation: (id: number, message: string) =>
-    request<{ ok: boolean }>(`/conversations/${id}/reply`, {
-      method: 'POST', body: JSON.stringify({ message }),
+  messageAttachment: (id: number, messageId: number, signal: AbortSignal) =>
+    adminFetch(`/conversations/${id}/messages/${messageId}/attachment`, { signal }).then((res) => res.blob()),
+  replyToConversation: (id: number, message: string, requestId?: string) =>
+    request<{ ok: boolean; message_id?: string | number }>(`/conversations/${id}/reply`, {
+      method: 'POST', body: JSON.stringify({ message, request_id: requestId }),
     }),
   closeConversation: (id: number) =>
     request<{ ok: boolean; status: string }>(`/conversations/${id}/status`, {
