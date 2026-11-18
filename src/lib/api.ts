@@ -73,6 +73,7 @@ export interface Conversation {
   oa_id: string
   message_count: number
   status: string
+  handoff_since?: number
   started_at: number
   last_message_at: number
   user: { display_name: string; avatar: string; phone: string } | null
@@ -114,11 +115,19 @@ export const api = {
   sources: () => request<{ sources: Source[] }>('/sources').then((r) => r.sources),
   daily: (days: number, source = '') =>
     request<{ series: DailyPoint[] }>(`/stats/daily${qs({ days, source })}`).then((r) => r.series),
-  conversations: (p: { source?: string; date_from?: number; date_to?: number; offset?: number; limit?: number }) =>
+  conversations: (p: { source?: string; status?: string; date_from?: number; date_to?: number; offset?: number; limit?: number }) =>
     request<{ conversations: Conversation[]; total: number }>(`/conversations${qs(p)}`),
   conversation: (id: number) => request<Conversation>(`/conversations/${id}`),
   messages: (id: number) =>
     request<{ messages: Message[] }>(`/conversations/${id}/messages?limit=500`).then((r) => r.messages),
+  replyToConversation: (id: number, message: string) =>
+    request<{ ok: boolean }>(`/conversations/${id}/reply`, {
+      method: 'POST', body: JSON.stringify({ message }),
+    }),
+  closeConversation: (id: number) =>
+    request<{ ok: boolean; status: string }>(`/conversations/${id}/status`, {
+      method: 'POST', body: JSON.stringify({ status: 'closed' }),
+    }),
   scopes: () => request<{ scopes: { name: string; description?: string }[] }>('/scopes').then((r) => r.scopes),
   documents: (scope = '') =>
     request<{ documents: Doc[] }>(`/documents${qs({ scope })}`).then((r) => r.documents),
