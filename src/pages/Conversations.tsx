@@ -1,5 +1,5 @@
 import { ArrowLeft, ChevronLeft, ChevronRight, Download, X } from 'lucide-react'
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Empty, ErrorBox, PageHeader, SourceBadge, StatusPill, fmtAgo, fmtTime, sourceOf } from '../components/ui'
 import { useAsync } from '../hooks/useAsync'
@@ -17,6 +17,10 @@ async function exportXlsx(rows: Record<string, unknown>[], sheet: string, file: 
   XLSX.writeFile(wb, file)
 }
 
+function joinMessages(older: Message[], newer: Message[]) {
+  return [...new Map([...older, ...newer].map((message) => [message.id, message])).values()]
+}
+
 function Transcript({ id, nameOf, onClose, onUpdated }: {
   id: number
   nameOf: (k: string) => string
@@ -24,15 +28,71 @@ function Transcript({ id, nameOf, onClose, onUpdated }: {
   onUpdated: () => void
 }) {
   const conv = useAsync(() => api.conversation(id), [id])
-  const msgs = useAsync(() => api.messages(id), [id])
-  const end = useRef<HTMLDivElement>(null)
+  const msgs = useAsync(() => api.recentMessages(id), [id])
+  const scroll = useRef<HTMLDivElement>(null)
+  const prependAnchor = useRef<{ height: number; top: number } | null>(null)
   const [draft, setDraft] = useState('')
   const [pending, setPending] = useState<'reply' | 'close' | ''>('')
   const [actionError, setActionError] = useState('')
   const [notice, setNotice] = useState('')
-  useEffect(() => {
-    end.current?.scrollIntoView({ block: 'end' })
-  }, [msgs.data])
+  const [history, setHistory] = useState<{ messages: Message[]; beforeId: number | null } | null>(null)
+  const [loadingOlder, setLoadingOlder] = useState(false)
+  const [olderError, setOlderError] = useState('')
+  const [exporting, setExporting] = useState(false)
+  const beforeId = history ? history.beforeId : msgs.data?.next_before_id
+  const messages = useMemo(
+    () => joinMessages(history?.messages ?? [], msgs.data?.messages ?? []),
+    [history, msgs.data],
+  )
+  useLayoutEffect(() => {
+    const box = scroll.current
+    if (!box || !messages.length) return
+    const anchor = prependAnchor.current
+    box.scrollTop = anchor ? anchor.top + box.scrollHeight - anchor.height : box.scrollHeight
+    prependAnchor.current = null
+  }, [messages])
+
+  const loadOlder = async () => {
+    if (!beforeId || loadingOlder) return
+    setLoadingOlder(true)
+    try {
+      const page = await api.recentMessages(id, beforeId)
+      const box = scroll.current
+      if (box) prependAnchor.current = { height: box.scrollHeight, top: box.scrollTop }
+      setOlderError('')
+      setHistory((prev) => ({
+        messages: joinMessages(page.messages, prev?.messages ?? []),
+        beforeId: page.next_before_id,
+      }))
+    } catch (error) {
+      setOlderError(error instanceof Error ? error.message : 'Không tải được tin nhắn cũ.')
+    } finally {
+      setLoadingOlder(false)
+    }
+  }
+
+  const exportTranscript = async () => {
+    if (exporting) return
+    setExporting(true)
+    setActionError('')
+    try {
+      const pages: Message[][] = []
+      let cursor: number | undefined
+      do {
+        const page = await api.recentMessages(id, cursor, 100)
+        pages.push(page.messages)
+        cursor = page.next_before_id ?? undefined
+      } while (cursor)
+      await exportXlsx(
+        pages.reverse().flat().map((m) => ({ 'Thời gian': fmtTime(m.created_at), 'Người gửi': SENDER[m.sender] || m.sender, 'Nội dung': m.content })),
+        'Hoi thoai', `hoi-thoai-${id}.xlsx`,
+      )
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Không xuất được hội thoại.')
+    } finally {
+      setExporting(false)
+    }
+  }
 
   const c = conv.data
   const s = c && sourceOf(c)
@@ -52,6 +112,14 @@ function Transcript({ id, nameOf, onClose, onUpdated }: {
         await api.replyToConversation(id, message)
         setDraft('')
         setNotice('Đã gửi qua Zalo.')
+        // Sau khi tải lại trang mới nhất, giữ các tin vừa rơi ra khỏi trang đó.
+        if (msgs.data) {
+          const latest = msgs.data
+          setHistory((prev) => ({
+            messages: joinMessages(prev?.messages ?? [], latest.messages),
+            beforeId: prev ? prev.beforeId : latest.next_before_id,
+          }))
+        }
         msgs.reload()
       } else {
         await api.closeConversation(id)
@@ -97,25 +165,32 @@ function Transcript({ id, nameOf, onClose, onUpdated }: {
             <div className="skeleton h-10 w-48" />
           )}
         </div>
-        <button className="btn-ghost h-9 px-3" disabled={!msgs.data?.length}
-          onClick={() => msgs.data && exportXlsx(
-            msgs.data.map((m) => ({ 'Thời gian': fmtTime(m.created_at), 'Người gửi': SENDER[m.sender] || m.sender, 'Nội dung': m.content })),
-            'Hoi thoai', `hoi-thoai-${id}.xlsx`)}>
+        <button className="btn-ghost h-9 px-3" disabled={!messages.length || exporting}
+          title={exporting ? 'Đang xuất Excel' : 'Xuất toàn bộ hội thoại'} aria-label="Xuất Excel" onClick={exportTranscript}>
           <Download className="h-4 w-4" aria-hidden /> <span className="hidden sm:inline">Xuất Excel</span>
         </button>
         <button onClick={onClose} className="hidden rounded-lg p-2 hover:bg-sunken lg:block" aria-label="Đóng">
           <X className="h-4 w-4" aria-hidden />
         </button>
       </header>
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-sunken/50 px-4 py-4">
-        {msgs.error ? (
+      <div ref={scroll} className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-sunken/50 px-4 py-4 [overflow-anchor:none]">
+        {msgs.error && !messages.length ? (
           <ErrorBox message={msgs.error} onRetry={msgs.reload} />
-        ) : !msgs.data ? (
+        ) : !msgs.data && !messages.length ? (
           [0, 1, 2].map((i) => <div key={i} className={`skeleton h-14 w-2/3 ${i % 2 ? 'ml-auto' : ''}`} />)
-        ) : !msgs.data.length ? (
+        ) : !messages.length ? (
           <Empty title="Hội thoại chưa có tin nhắn" />
         ) : (
-          msgs.data.map((m: Message) => {
+          <>
+          {(beforeId || olderError) && (
+            <div className="space-y-2 text-center">
+              {olderError && <p role="alert" className="text-sm text-danger">{olderError}</p>}
+              <button type="button" className="btn-ghost" onClick={loadOlder} disabled={loadingOlder || msgs.loading}>
+                {loadingOlder ? 'Đang tải tin cũ…' : 'Tải thêm tin cũ'}
+              </button>
+            </div>
+          )}
+          {messages.map((m: Message) => {
             const mine = m.sender === 'user'
             return (
               <div key={m.id} className={`flex flex-col ${mine ? 'items-start' : 'items-end'}`}>
@@ -127,9 +202,10 @@ function Transcript({ id, nameOf, onClose, onUpdated }: {
                 <span className="mt-1 px-1 text-[11px] text-muted">{SENDER[m.sender] || m.sender} · {fmtTime(m.created_at)}</span>
               </div>
             )
-          })
+          })}
+          {msgs.error && <ErrorBox message={msgs.error} onRetry={msgs.reload} />}
+          </>
         )}
-        <div ref={end} />
       </div>
       {c && (c.status !== 'closed' || notice || actionError) && (
         <footer className="shrink-0 space-y-2 border-t border-line p-3 sm:px-4">
