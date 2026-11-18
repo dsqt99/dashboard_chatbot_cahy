@@ -285,8 +285,10 @@ export const api = {
   conversations: (p: { source?: string; status?: string; date_from?: number; date_to?: number; offset?: number; limit?: number }) =>
     request<{ conversations: Conversation[]; total: number }>(`/conversations${qs(p)}`),
   conversation: (id: number) => request<Conversation>(`/conversations/${id}`),
-  messages: (id: number) =>
-    request<{ messages: Message[] }>(`/conversations/${id}/messages?limit=500`).then((r) => r.messages),
+  recentMessages: (id: number, beforeId?: number, limit = 50) =>
+    request<{ messages: Message[]; next_before_id: number | null }>(
+      `/conversations/${id}/messages${qs({ latest: 'true', limit, before_id: beforeId })}`,
+    ),
   replyToConversation: (id: number, message: string) =>
     request<{ ok: boolean }>(`/conversations/${id}/reply`, {
       method: 'POST', body: JSON.stringify({ message }),
