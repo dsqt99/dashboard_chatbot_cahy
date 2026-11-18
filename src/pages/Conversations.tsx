@@ -3,7 +3,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent }
 import { useSearchParams } from 'react-router-dom'
 import { Empty, ErrorBox, PageHeader, SourceBadge, StatusPill, fmtAgo, fmtTime, sourceOf } from '../components/ui'
 import { useAsync } from '../hooks/useAsync'
-import { api, type Conversation, type Message } from '../lib/api'
+import { api, type Citation, type Conversation, type Message } from '../lib/api'
 
 const LIMIT = 30
 const SENDER: Record<string, string> = { user: 'Người dân', assistant: 'Trợ lý ảo', officer: 'Cán bộ', staff: 'Cán bộ', system: 'Hệ thống' }
@@ -23,6 +23,86 @@ function joinMessages(older: Message[], newer: Message[]) {
   return [...new Map([...older, ...newer].map((message) => [message.id, message])).values()]
 }
 
+function WebAttachment({ conversationId, messageId }: { conversationId: number; messageId: number }) {
+  const [preview, setPreview] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const request = useRef<AbortController | null>(null)
+  const url = useRef('')
+  useEffect(() => () => {
+    request.current?.abort()
+    if (url.current) URL.revokeObjectURL(url.current)
+  }, [])
+
+  const open = async () => {
+    if (request.current || url.current) return
+    const controller = new AbortController()
+    request.current = controller
+    setLoading(true)
+    setError('')
+    try {
+      const blob = await api.messageAttachment(conversationId, messageId, controller.signal)
+      if (controller.signal.aborted) return
+      url.current = URL.createObjectURL(blob)
+      setPreview(url.current)
+    } catch (cause) {
+      if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Không mở được ảnh.')
+    } finally {
+      if (!controller.signal.aborted) setLoading(false)
+      request.current = null
+    }
+  }
+
+  return (
+    <div className="mt-1.5">
+      {preview ? (
+        <a href={preview} target="_blank" rel="noreferrer" className="inline-block rounded-md focus-visible:outline-accent" aria-label="Mở ảnh đính kèm ở kích thước gốc">
+          <img className="max-h-64 w-auto max-w-full rounded-md object-contain" src={preview} alt="Ảnh người dân gửi" />
+        </a>
+      ) : (
+        <button type="button" onClick={open} disabled={loading} className="text-sm font-medium text-accent underline underline-offset-2 disabled:opacity-60">
+          {loading ? 'Đang mở ảnh…' : 'Xem ảnh đính kèm'}
+        </button>
+      )}
+      {error && <p role="alert" className="mt-1 text-xs text-danger">{error}</p>}
+    </div>
+  )
+}
+
+function MessageSources({ citations }: { citations?: Citation[] }) {
+  const sources = Array.isArray(citations) ? citations.filter((source) => source?.title || source?.source || source?.document_number) : []
+  if (!sources.length) return null
+  return (
+    <details className="mt-2 border-t border-line pt-1.5 text-xs">
+      <summary className="cursor-pointer font-medium text-accent">Nguồn tham khảo ({sources.length})</summary>
+      <ul className="mt-1.5 space-y-1.5">
+        {sources.map((source, i) => {
+          const label = source.title || source.source || source.document_number
+          const locator = [source.document_number, ...(Array.isArray(source.sections) ? source.sections : []), source.pages && `Trang ${source.pages}`].filter(Boolean).join(' · ')
+          return (
+            <li key={i}>
+              <span className="font-medium">{label}</span>
+              {locator && <span className="block text-muted">{locator}</span>}
+              {source.url_verified === true && /^https:\/\//i.test(source.url || '') && (
+                <a href={source.url} target="_blank" rel="noreferrer" className="text-accent underline underline-offset-2" aria-label={`Xem văn bản công khai ${source.document_number || label}`}>
+                  Xem văn bản công khai
+                </a>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+    </details>
+  )
+}
+
+function newReplyId() {
+  const bytes = crypto.getRandomValues(new Uint8Array(16))
+  bytes[6] = (bytes[6] & 15) | 64
+  bytes[8] = (bytes[8] & 63) | 128
+  return Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('')
+}
+
 function Transcript({ id, nameOf, onClose, onUpdated }: {
   id: number
   nameOf: (k: string) => string
@@ -34,6 +114,7 @@ function Transcript({ id, nameOf, onClose, onUpdated }: {
   const scroll = useRef<HTMLDivElement>(null)
   const prependAnchor = useRef<{ height: number; top: number } | null>(null)
   const [draft, setDraft] = useState('')
+  const webReply = useRef<{ content: string; id: string } | null>(null)
   const [pending, setPending] = useState<'reply' | 'close' | ''>('')
   const [actionError, setActionError] = useState('')
   const [notice, setNotice] = useState('')
@@ -99,8 +180,8 @@ function Transcript({ id, nameOf, onClose, onUpdated }: {
   const c = conv.data
   const s = c && sourceOf(c)
   const who = c ? whoOf(c) : ''
-
-  const canReply = !!c?.oa_id && c.status !== 'closed'
+  const isWeb = c?.channel.startsWith('web:') && !c.oa_id
+  const canReply = c?.status !== 'closed' && (!!c?.oa_id || (isWeb && !!c?.web_reply_available))
 
   const handleAction = async (action: 'reply' | 'close') => {
     if (pending || !c || c.status === 'closed') return
@@ -111,9 +192,13 @@ function Transcript({ id, nameOf, onClose, onUpdated }: {
     setNotice('')
     try {
       if (action === 'reply') {
-        await api.replyToConversation(id, message)
+        if (isWeb && webReply.current?.content !== message) {
+          webReply.current = { id: newReplyId(), content: message }
+        }
+        await api.replyToConversation(id, message, isWeb ? webReply.current?.id : undefined)
+        webReply.current = null
         setDraft('')
-        setNotice('Đã gửi qua Zalo.')
+        setNotice(isWeb ? 'Đã lưu phản hồi cho phiên web.' : 'Đã gửi qua Zalo.')
         // Sau khi tải lại trang mới nhất, giữ các tin vừa rơi ra khỏi trang đó.
         if (msgs.data) {
           const latest = msgs.data
@@ -200,7 +285,10 @@ function Transcript({ id, nameOf, onClose, onUpdated }: {
                 <div className={`max-w-[85%] whitespace-pre-wrap break-words rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed [overflow-wrap:anywhere] ${
                   mine ? 'rounded-bl-md bg-surface shadow-card' : m.sender === 'assistant' ? 'rounded-br-md bg-accent text-white' : 'rounded-br-md bg-ok text-white'
                 }`}>
-                  {m.content || <em className="opacity-70">[không có nội dung văn bản]</em>}
+                  {m.content && (!m.has_image || m.content !== '[ảnh]') && m.content}
+                  {m.has_image ? <WebAttachment conversationId={id} messageId={m.id} />
+                    : !m.content && <em className="opacity-70">[không có nội dung văn bản]</em>}
+                  {m.sender === 'assistant' && <MessageSources citations={m.metadata?.citations} />}
                 </div>
                 <span className="mt-1 px-1 text-[11px] text-muted">{SENDER[m.sender] || m.sender} · {fmtTime(m.created_at)}</span>
               </div>
@@ -218,14 +306,14 @@ function Transcript({ id, nameOf, onClose, onUpdated }: {
             <form className="space-y-2" onSubmit={sendReply}>
               {canReply ? (
                 <div>
-                  <label htmlFor="officer-reply" className="label">Trả lời qua Zalo</label>
+                  <label htmlFor="officer-reply" className="label">{isWeb ? 'Trả lời trên widget web' : 'Trả lời qua Zalo'}</label>
                   <textarea id="officer-reply" rows={2} maxLength={4000}
                     className="field !h-auto !min-h-0 !max-h-32 resize-y py-2" value={draft}
                     onChange={(event) => setDraft(event.target.value)} disabled={!!pending}
                     placeholder="Nhập nội dung gửi cho người dân..." />
                 </div>
               ) : (
-                <p className="text-sm text-muted">Hội thoại web. Đóng hội thoại sau khi đã xử lý qua kênh hỗ trợ phù hợp.</p>
+                <p className="text-sm text-muted">{isWeb ? 'Phiên web chưa đăng ký nhận phản hồi. Người dân có thể mở lại widget và bấm Cần cán bộ hỗ trợ.' : 'Chưa có kênh trả lời cho hội thoại này.'}</p>
               )}
               <div className="flex flex-wrap justify-end gap-2">
                 <button type="button" className="btn-ghost" onClick={() => void handleAction('close')}
@@ -234,7 +322,7 @@ function Transcript({ id, nameOf, onClose, onUpdated }: {
                 </button>
                 {canReply && (
                   <button type="submit" className="btn-primary" disabled={!!pending || conv.loading || !draft.trim()}>
-                    {pending === 'reply' ? 'Đang gửi...' : 'Gửi qua Zalo'}
+                    {pending === 'reply' ? 'Đang gửi...' : isWeb ? 'Gửi lên widget' : 'Gửi qua Zalo'}
                   </button>
                 )}
               </div>
@@ -258,25 +346,28 @@ export default function Conversations() {
   const set = (patch: Record<string, string | number>) => {
     const next = new URLSearchParams(sp)
     for (const [k, v] of Object.entries(patch)) v ? next.set(k, String(v)) : next.delete(k)
+    if (!('id' in patch)) next.delete('id')
     if (!('page' in patch) && !('id' in patch)) next.delete('page')
     setSp(next, { replace: 'id' in patch })
   }
 
   const srcs = useAsync(api.sources, [])
+  const listKey = JSON.stringify([source, queue, from, to, page])
   const list = useAsync(
-    () => api.conversations({ source, status: queue ? 'needs_human' : '', date_from: toTs(from), date_to: toTs(to, true), offset: page * LIMIT, limit: LIMIT }),
-    [source, queue, from, to, page],
+    async () => ({ key: listKey, ...await api.conversations({ source, status: queue ? 'needs_human' : '', date_from: toTs(from), date_to: toTs(to, true), offset: page * LIMIT, limit: LIMIT }) }),
+    [listKey],
   )
+  const currentList = list.data?.key === listKey ? list.data : undefined
   const nameOf = (k: string) => srcs.data?.find((s) => s.source === k)?.name || k.replace(/^web:/, '')
-  const total = list.data?.total || 0
+  const total = currentList?.total || 0
   const pages = Math.max(1, Math.ceil(total / LIMIT))
   useEffect(() => {
-    if (!list.loading && list.data && page >= pages) set({ page: pages - 1 })
-  }, [list.loading, list.data, page, pages])
+    if (!list.loading && currentList && page >= pages) set({ page: pages - 1 })
+  }, [list.loading, currentList, page, pages])
 
   const exportPage = () =>
-    list.data && exportXlsx(
-      list.data.conversations.map((c: Conversation) => ({
+    currentList && !list.loading && exportXlsx(
+      currentList.conversations.map((c: Conversation) => ({
         'Mã': c.id, 'Tiêu đề': c.title, 'Người dân': whoOf(c), 'Nguồn': nameOf(sourceOf(c).key),
         'Số tin nhắn': c.message_count, 'Trạng thái': c.status, 'Bắt đầu': fmtTime(c.started_at), 'Gần nhất': fmtTime(c.last_message_at),
       })),
@@ -288,7 +379,7 @@ export default function Conversations() {
         title="Hội thoại"
         desc="Lịch sử hỏi đáp của người dân, lọc theo nguồn và thời gian."
         actions={
-          <button className="btn-ghost" onClick={exportPage} disabled={!list.data?.conversations.length}>
+          <button className="btn-ghost" onClick={exportPage} disabled={list.loading || !currentList?.conversations.length}>
             <Download className="h-4 w-4" aria-hidden /> Xuất trang này
           </button>
         }
@@ -346,24 +437,24 @@ export default function Conversations() {
       <div className={`grid gap-4 ${openId ? 'lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]' : ''}`}>
         <section className={`card ${openId ? 'hidden lg:block' : ''}`} aria-label="Danh sách hội thoại">
           <div className="flex items-center justify-between border-b border-line px-4 py-3 text-sm text-muted" aria-live="polite">
-            <span>{list.data ? <><span className="num font-medium text-ink">{total.toLocaleString('vi-VN')}</span> hội thoại</> : 'Đang tải...'}</span>
+            <span>{currentList ? <><span className="num font-medium text-ink">{total.toLocaleString('vi-VN')}</span> hội thoại</> : !list.error && 'Đang tải...'}</span>
             <span className="num">Trang {page + 1}/{pages}</span>
           </div>
           {list.error ? (
             <ErrorBox message={list.error} onRetry={list.reload} />
-          ) : !list.data ? (
+          ) : !currentList ? (
             <div className="space-y-3 p-4">{[0, 1, 2, 3, 4].map((i) => <div key={i} className="skeleton h-12" />)}</div>
-          ) : !list.data.conversations.length ? (
+          ) : !currentList.conversations.length ? (
             <Empty title={queue ? 'Không có hội thoại cần xử lý' : 'Không có hội thoại phù hợp'}
               hint={source || from || to ? 'Thử bỏ bớt bộ lọc hoặc chọn khoảng thời gian rộng hơn.' : undefined} />
           ) : (
             <ul className={`divide-y divide-line ${list.loading ? 'opacity-60' : ''}`}>
-              {list.data.conversations.map((c) => {
+              {currentList.conversations.map((c) => {
                 const s = sourceOf(c)
                 const active = c.id === openId
                 return (
                   <li key={c.id}>
-                    <button onClick={() => set({ id: c.id })} aria-current={active || undefined}
+                    <button onClick={() => set({ id: c.id })} disabled={list.loading} aria-current={active || undefined}
                       className={`w-full px-4 py-3 text-left transition-colors ${active ? 'bg-accent-soft' : 'hover:bg-sunken'}`}>
                       <div className="flex items-center justify-between gap-3">
                         <span className="truncate text-sm font-medium" title={c.title || undefined}>{c.title || whoOf(c)}</span>
