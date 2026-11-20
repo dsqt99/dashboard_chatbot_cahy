@@ -1,9 +1,9 @@
 import { Check, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { useState } from 'react'
 import Modal from '../components/Modal'
-import { Empty, ErrorBox, PageHeader, Segmented, fmtAgo } from '../components/ui'
+import { DeptError, DeptOptions, Empty, ErrorBox, OrphanDept, PageHeader, Segmented, fmtAgo } from '../components/ui'
 import { useAsync } from '../hooks/useAsync'
-import { api, type Department, type Role, type User, type UserStatus } from '../lib/api'
+import { api, type Role, type User, type UserStatus } from '../lib/api'
 
 const STATUS_BADGE: Record<UserStatus, { label: string; cls: string }> = {
   pending: { label: 'Chờ duyệt', cls: 'bg-warn/10 text-warn' },
@@ -15,7 +15,7 @@ const STATUS_BADGE: Record<UserStatus, { label: string; cls: string }> = {
 export default function Users() {
   const [filter, setFilter] = useState<string>('')
   const usersRes = useAsync(() => api.listUsers(filter), [filter])
-  const depts = useAsync(() => api.departments().catch(() => [] as Department[]), [])
+  const depts = useAsync(() => api.departments(), [])
 
   const [err, setErr] = useState('')
   const [formOpen, setFormOpen] = useState(false)
@@ -182,7 +182,7 @@ export default function Users() {
                         <p className="font-mono text-xs text-muted">@{u.username}</p>
                       </td>
                       <td className="px-4 py-3 text-xs">{u.role === 'admin' ? 'Quản trị viên' : 'Cán bộ'}</td>
-                      <td className="px-4 py-3 text-xs text-muted">{u.department_name || '—'}</td>
+                      <td className="px-4 py-3 text-xs text-muted">{u.department_name || '—'}<OrphanDept id={u.department_id} depts={depts.data} /></td>
                       <td className="px-4 py-3">
                         <span className={`inline-flex rounded-md px-2 py-0.5 text-xs font-medium ${st.cls}`}>{st.label}</span>
                       </td>
@@ -258,9 +258,9 @@ export default function Users() {
           <div>
             <label htmlFor="u-dept" className="label">Phòng ban</label>
             <select id="u-dept" className="field" value={deptId} onChange={(e) => setDeptId(e.target.value)}>
-              <option value="">Không gán phòng ban</option>
-              {depts.data?.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+              <DeptOptions value={deptId} depts={depts.data} />
             </select>
+            {depts.error && <DeptError message={depts.error} onRetry={depts.reload} />}
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" className="btn-ghost" onClick={() => setFormOpen(false)}>Hủy</button>

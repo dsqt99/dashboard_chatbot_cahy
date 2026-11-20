@@ -26,6 +26,12 @@ npm run dev
 npm run build
 ```
 
+## Document Wiki
+
+Mục **Document Wiki** trên thanh điều hướng có ba trang chỉ đọc: Tài liệu, Phòng ban và Tài khoản. Đăng nhập bằng email và mật khẩu Document Wiki. Wiki áp dụng quyền của tài khoản đó cho từng yêu cầu. Phiên Wiki được giữ trong bộ nhớ đến khi tải lại trang, đăng xuất hoặc hết hạn. Môi trường Wiki chỉ cho phép đăng nhập SSO cần tích hợp xác thực riêng.
+
+Đặt `WIKI_API_UPSTREAM` thành URL gốc của API Document Wiki, bỏ hậu tố `/api` và dấu gạch chéo cuối. Vite mặc định dùng `http://127.0.0.1:5055`. Docker Desktop mặc định dùng `http://host.docker.internal:5055`. Khi triển khai trên máy chủ, cấu hình URL mà container dashboard có thể truy cập.
+
 ## Cấu hình môi trường (`.env`)
 
 Tạo file `.env` ở thư mục gốc dự án và cấu hình các biến cần thiết. Không commit secrets.

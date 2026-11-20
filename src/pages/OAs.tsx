@@ -10,16 +10,18 @@ import {
   Trash2,
 } from 'lucide-react'
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import Modal from '../components/Modal'
-import { CopyField, Empty, ErrorBox, PageHeader, fmtAgo, fmtNum, fmtTime } from '../components/ui'
-import { ChannelTabs } from './Portals'
+import { CopyField, DeptError, DeptOptions, Empty, ErrorBox, OrphanDept, PageHeader, fmtAgo, fmtNum, fmtTime } from '../components/ui'
+import { ChannelTabs, SourceStats } from './Portals'
 import { useAsync } from '../hooks/useAsync'
-import { api, type Agent, type Department, type OA, type OACredentialStatus, type OAStats } from '../lib/api'
+import { api, type Agent, type OA, type OACredentialStatus, type OAStats } from '../lib/api'
 
 export default function OAs() {
   const oas = useAsync(api.listOAs, [])
   const agents = useAsync(api.listAgents, [])
-  const depts = useAsync(() => api.departments().catch(() => [] as Department[]), [])
+  const depts = useAsync(() => api.departments(), [])
+  const sources = useAsync(api.sources, [])
 
   const [err, setErr] = useState('')
   const [formOpen, setFormOpen] = useState(false)
@@ -196,7 +198,7 @@ export default function OAs() {
   return (
     <>
       <PageHeader
-        title="Kênh Zalo OA & Web"
+        title="Kênh kết nối"
         desc="Kết nối Official Account, gán Agent trả lời tự động, cấu hình OAuth và khóa bí mật Zalo."
         actions={
           <button className="btn-primary" onClick={openCreate}>
@@ -235,11 +237,15 @@ export default function OAs() {
                   )}
                 </div>
                 <p className="text-xs text-muted">
-                  Agent: <span className="font-medium text-ink">{agentName(oa.agent_id)}</span>
-                  {oa.department_name ? ` · ${oa.department_name}` : ''}
-                  {` · ${fmtNum(oa.message_count || 0)} tin nhắn`}
+                  Agent: {oa.agent_id
+                    ? <Link to="/agents" className="font-medium text-ink hover:text-accent hover:underline">{agentName(oa.agent_id)}</Link>
+                    : <span className="font-medium text-warn">Chưa gán Agent</span>}
+                  {oa.department_name ? ` · ${oa.department_name}` : ''}<OrphanDept id={oa.department_id} depts={depts.data} />
                   {oa.reply_mode === 'whitelist' ? ` · Whitelist (${oa.allowed_user_ids?.length || 0})` : ''}
                 </p>
+                {sources.data
+                  ? <SourceStats sources={sources.data.filter((s) => s.source === `zalo:${oa.oa_id}`)} />
+                  : <p className="text-xs text-muted">{fmtNum(oa.message_count || 0)} tin nhắn</p>}
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
@@ -290,9 +296,9 @@ export default function OAs() {
             <div>
               <label htmlFor="oa-dept" className="label">Phòng ban</label>
               <select id="oa-dept" className="field" value={deptId} onChange={(e) => setDeptId(e.target.value)}>
-                <option value="">Không gán phòng ban</option>
-                {depts.data?.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                <DeptOptions value={deptId} depts={depts.data} />
               </select>
+              {depts.error && <DeptError message={depts.error} onRetry={depts.reload} />}
             </div>
           </div>
           <div>

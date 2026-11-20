@@ -1,16 +1,14 @@
 import {
   Activity,
+  BookOpen,
   Bot,
   ChevronsUpDown,
-  FileText,
-  FlaskConical,
   LayoutDashboard,
   LogOut,
-  Menu,
+  PanelLeft,
   MessageSquarePlus,
   MessagesSquare,
   Moon,
-  Radio,
   Sun,
   UserCog,
   Users,
@@ -20,15 +18,14 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import type { User } from '../lib/api'
 import ProfileModal from './ProfileModal'
+import UpdateNotice from './UpdateNotice'
 
 const NAV = [
   { to: '/', label: 'Tổng quan', icon: LayoutDashboard },
-  { to: '/sources', label: 'Nguồn chatbot', icon: Radio },
-  { to: '/oas', label: 'Kênh Zalo OA & Web', icon: MessageSquarePlus },
-  { to: '/agents', label: 'Quản lý Agent', icon: Bot },
-  { to: '/agent-test', label: 'Test Agent', icon: FlaskConical },
+  { to: '/agents', label: 'Agent', icon: Bot },
+  { to: '/oas', label: 'Kênh kết nối', icon: MessageSquarePlus },
   { to: '/conversations', label: 'Hội thoại', icon: MessagesSquare },
-  { to: '/documents', label: 'Tài liệu tri thức', icon: FileText },
+  { to: '/wiki', label: 'Document Wiki', icon: BookOpen },
   { to: '/operations', label: 'Vận hành', icon: Activity },
   { to: '/users', label: 'Quản lý tài khoản', icon: Users, adminOnly: true },
 ]
@@ -84,6 +81,7 @@ export default function Layout({
   const menuRef = useRef<HTMLDivElement>(null)
   const [dark, setDark] = useTheme()
   const { pathname } = useLocation()
+  const current = NAV.find((n) => (n.to === '/' ? pathname === '/' : pathname.startsWith(n.to)))
 
   useEffect(() => {
     if (!menuOpen) return
@@ -180,12 +178,18 @@ export default function Layout({
 
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 border-r border-line bg-surface lg:block">{sidebar}</aside>
 
-      <div className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-line bg-surface/95 px-4 backdrop-blur lg:hidden">
-        <Brand />
-        <button onClick={() => setOpen(true)} className="rounded-lg p-2 hover:bg-sunken" aria-label="Mở menu" aria-expanded={open}>
-          <Menu className="h-5 w-5" aria-hidden />
+      <header className="sticky top-0 z-20 grid h-12 grid-cols-[2.5rem_1fr_2.5rem] items-center border-b border-line/60 bg-bg/80 px-2 backdrop-blur-md lg:hidden">
+        <button onClick={() => setOpen(true)} className="flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:bg-sunken hover:text-ink" aria-label="Mở menu" aria-expanded={open}>
+          <PanelLeft className="h-[18px] w-[18px]" strokeWidth={1.75} aria-hidden />
         </button>
-      </div>
+        <div className="flex min-w-0 items-center justify-center gap-2">
+          <img src="/Logo-Bo-Cong-An.webp" alt="" width={20} height={20} className="h-5 w-5 shrink-0 object-contain" />
+          <p className="truncate text-sm font-medium">{current?.label || 'Trợ lý ảo CAHY'}</p>
+        </div>
+        <button onClick={() => setDark(!dark)} className="flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:bg-sunken hover:text-ink" aria-label={dark ? 'Giao diện sáng' : 'Giao diện tối'}>
+          {dark ? <Sun className="h-[18px] w-[18px]" strokeWidth={1.75} aria-hidden /> : <Moon className="h-[18px] w-[18px]" strokeWidth={1.75} aria-hidden />}
+        </button>
+      </header>
 
       {open && (
         <div className="fixed inset-0 z-40 lg:hidden" role="dialog" aria-modal="true" aria-label="Menu">
@@ -204,6 +208,7 @@ export default function Layout({
       </main>
 
       <ProfileModal open={profileOpen} user={user} onClose={() => setProfileOpen(false)} onUserUpdate={onUserUpdate} />
+      <UpdateNotice />
     </div>
   )
 }

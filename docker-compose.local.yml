@@ -1,0 +1,12 @@
+services:
+  dashboard-web:
+    ports:
+      - "127.0.0.1:3000:80"
+    networks:
+      - proxy-net
+      - chatbot-local
+
+networks:
+  chatbot-local:
+    external: true
+    name: chatbot_default

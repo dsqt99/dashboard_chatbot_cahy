@@ -48,7 +48,7 @@ const STATUS: Record<string, { label: string; cls: string }> = {
 
 export function StatusPill({ status }: { status: string }) {
   const s = STATUS[status] || { label: status, cls: 'text-muted bg-sunken' }
-  return <span className={`inline-flex rounded-md px-2 py-0.5 text-xs font-medium ${s.cls}`}>{s.label}</span>
+  return <span className={`inline-flex shrink-0 whitespace-nowrap rounded-md px-2 py-0.5 text-xs font-medium ${s.cls}`}>{s.label}</span>
 }
 
 export function PageHeader({ title, desc, actions }: { title: string; desc?: string; actions?: ReactNode }) {
@@ -127,5 +127,36 @@ export function CopyField({ label, value }: { label: string; value: string }) {
         </button>
       </div>
     </div>
+  )
+}
+
+/** Phòng ban đã lưu nhưng không còn trong danh mục Arkon (bị xoá hoặc ngừng). */
+const isOrphanDept = (id: string | null | undefined, depts?: { id: string }[]) =>
+  !!id && !!depts?.length && !depts.some((d) => d.id === id)
+
+export function OrphanDept({ id, depts }: { id?: string | null; depts?: { id: string }[] }) {
+  return isOrphanDept(id, depts) ? <span className="text-danger"> (không còn trong Arkon)</span> : null
+}
+
+export function DeptOptions({ value, depts }: { value: string; depts?: { id: string; name: string }[] }) {
+  return (
+    <>
+      <option value="">Không gán phòng ban</option>
+      {depts?.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+      {/* Danh mục chưa tải được: vẫn giữ phòng ban đang gán để select không hiện sai "Không gán". */}
+      {value && !depts && <option value={value}>Phòng ban hiện tại</option>}
+      {/* Giữ ID cũ trong select để lưu các trường khác không đổi phòng ban ngầm. */}
+      {isOrphanDept(value, depts) && <option value={value}>Phòng ban cũ (không còn trong Arkon)</option>}
+    </>
+  )
+}
+
+/** Danh mục Arkon lỗi thì nói rõ, tránh để select chỉ còn "Không gán" như thể không có phòng ban nào. */
+export function DeptError({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <p role="alert" className="mt-1 text-xs text-danger">
+      Không tải được danh mục phòng ban: {message}{' '}
+      <button type="button" className="underline" onClick={onRetry}>Thử lại</button>
+    </p>
   )
 }

@@ -1,3 +1,17 @@
+map "$request_method:$uri" $wiki_api_path {
+  default "";
+  "POST:/wiki-api/auth/login" /api/auth/login;
+  "GET:/wiki-api/departments" /api/departments;
+  "GET:/wiki-api/employees" /api/employees;
+  "GET:/wiki-api/sources" /api/sources;
+  ~^GET:/wiki-api/sources/(?<wiki_source>[0-9a-fA-F-]+)$ /api/sources/$wiki_source;
+  "GET:/wiki-api/sources/processing-summary" /api/sources/processing-summary;
+  ~^GET:/wiki-api/sources/(?<wiki_preview>[0-9a-fA-F-]+)/preview$ /api/sources/$wiki_preview/preview;
+  "GET:/wiki-api/knowledge-types" /api/knowledge-types;
+  "GET:/wiki-api/wiki/pages" /api/wiki/pages;
+  ~^GET:/wiki-api/wiki/pages/(?<wiki_slug>[A-Za-z0-9._-]+)$ /api/wiki/pages/$wiki_slug;
+}
+
 server {
   listen 80;
   server_name _;
@@ -14,7 +28,21 @@ server {
     proxy_read_timeout 60s;
   }
 
+  location ^~ /wiki-api/ {
+    if ($wiki_api_path = "") { return 404; }
+    resolver 127.0.0.11 valid=30s;
+    set $wiki_upstream ${WIKI_API_UPSTREAM};
+    proxy_pass $wiki_upstream$wiki_api_path$is_args$args;
+    proxy_ssl_server_name on;
+    proxy_set_header Cookie "";
+    proxy_hide_header Set-Cookie;
+    proxy_hide_header Cache-Control;
+    add_header Cache-Control "no-store" always;
+  }
+
   location / {
+    # index.html luôn kiểm tra lại để bản build mới có hiệu lực ngay khi deploy.
+    add_header Cache-Control "no-cache" always;
     try_files $uri $uri/ /index.html;
   }
 

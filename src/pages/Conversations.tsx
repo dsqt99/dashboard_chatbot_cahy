@@ -1,5 +1,5 @@
 import { ArrowLeft, ChevronLeft, ChevronRight, Download, X } from 'lucide-react'
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Empty, ErrorBox, PageHeader, SourceBadge, StatusPill, fmtAgo, fmtTime, sourceOf } from '../components/ui'
 import { useAsync } from '../hooks/useAsync'
@@ -9,6 +9,24 @@ const LIMIT = 30
 const SENDER: Record<string, string> = { user: 'Người dân', assistant: 'Trợ lý ảo', officer: 'Cán bộ', staff: 'Cán bộ', system: 'Hệ thống' }
 
 const whoOf = (c: Conversation) => c.user?.display_name || c.user_id || 'Khách ẩn danh'
+// Khách web ẩn danh chỉ có mã phiên ngẫu nhiên — không đáng hiển thị trong danh sách.
+const nameOnly = (c: Conversation) => c.user?.display_name || (c.oa_id ? c.user_id : '')
+
+// shortcut: chỉ render **đậm**, `code`, [link](url) và tự xuống dòng; cần bảng/ảnh thì thêm thư viện markdown.
+function Md({ text }: { text: string }) {
+  const out: ReactNode[] = []
+  const re = /\*\*(.+?)\*\*|`([^`]+)`|\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g
+  let last = 0
+  for (const m of text.matchAll(re)) {
+    out.push(text.slice(last, m.index))
+    if (m[1]) out.push(<strong key={m.index} className="font-semibold">{m[1]}</strong>)
+    else if (m[2]) out.push(<code key={m.index} className="rounded bg-black/10 px-1 font-mono text-[0.85em]">{m[2]}</code>)
+    else out.push(<a key={m.index} href={m[4]} target="_blank" rel="noreferrer" className="underline underline-offset-2">{m[3]}</a>)
+    last = m.index! + m[0].length
+  }
+  out.push(text.slice(last))
+  return <>{out.map((x, i) => <Fragment key={i}>{x}</Fragment>)}</>
+}
 
 const toTs = (d: string, end = false) => (d ? Math.floor(new Date(`${d}T${end ? '23:59:59' : '00:00:00'}+07:00`).getTime() / 1000) : 0)
 
@@ -17,6 +35,48 @@ async function exportXlsx(rows: Record<string, unknown>[], sheet: string, file: 
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), sheet)
   XLSX.writeFile(wb, file)
+}
+
+// Khung vừa khít phần còn lại của màn hình: trang không cuộn, header/pager đứng yên, chỉ phần giữa cuộn.
+function useFitHeight() {
+  const box = useRef<HTMLElement>(null)
+  useLayoutEffect(() => {
+    const fit = () => {
+      const el = box.current
+      if (el) el.style.height = `${Math.max(420, innerHeight - el.getBoundingClientRect().top - scrollY - 32)}px`
+    }
+    fit()
+    addEventListener('resize', fit)
+    return () => removeEventListener('resize', fit)
+  }, [])
+  return box
+}
+
+// Trang đầu, cuối, quanh trang hiện tại; khoảng hở thành dấu "…".
+function pageItems(page: number, pages: number): (number | '…')[] {
+  const keep = [...new Set([0, page - 1, page, page + 1, pages - 1])].filter((p) => p >= 0 && p < pages).sort((a, b) => a - b)
+  return keep.flatMap((p, i) => (i && p - keep[i - 1] > 1 ? ['…' as const, p] : [p]))
+}
+
+function Pager({ page, pages, onGo }: { page: number; pages: number; onGo: (p: number) => void }) {
+  const btn = 'inline-flex h-8 min-w-[2rem] items-center justify-center rounded-md px-2 text-sm num transition-colors disabled:pointer-events-none disabled:opacity-40'
+  return (
+    <nav className="flex shrink-0 items-center justify-center gap-1 border-t border-line px-3 py-2" aria-label="Phân trang">
+      <button className={`${btn} hover:bg-sunken`} disabled={page === 0} onClick={() => onGo(page - 1)} aria-label="Trang trước">
+        <ChevronLeft className="h-4 w-4" aria-hidden />
+      </button>
+      {pageItems(page, pages).map((p, i) =>
+        p === '…' ? <span key={`g${i}`} className="px-1 text-sm text-muted" aria-hidden>…</span> : (
+          <button key={p} onClick={() => onGo(p)} aria-current={p === page ? 'page' : undefined} aria-label={`Trang ${p + 1}`}
+            className={`${btn} ${p === page ? 'bg-accent font-semibold text-white dark:text-bg' : 'text-muted hover:bg-sunken hover:text-ink'}`}>
+            {p + 1}
+          </button>
+        ))}
+      <button className={`${btn} hover:bg-sunken`} disabled={page + 1 >= pages} onClick={() => onGo(page + 1)} aria-label="Trang sau">
+        <ChevronRight className="h-4 w-4" aria-hidden />
+      </button>
+    </nav>
+  )
 }
 
 function joinMessages(older: Message[], newer: Message[]) {
@@ -113,6 +173,8 @@ function Transcript({ id, nameOf, onClose, onUpdated }: {
   const msgs = useAsync(() => api.recentMessages(id), [id])
   const scroll = useRef<HTMLDivElement>(null)
   const prependAnchor = useRef<{ height: number; top: number } | null>(null)
+  const box = useFitHeight()
+  const heading = useRef<HTMLHeadingElement>(null)
   const [draft, setDraft] = useState('')
   const webReply = useRef<{ content: string; id: string } | null>(null)
   const [pending, setPending] = useState<'reply' | 'close' | ''>('')
@@ -127,6 +189,12 @@ function Transcript({ id, nameOf, onClose, onUpdated }: {
     () => joinMessages(history?.messages ?? [], msgs.data?.messages ?? []),
     [history, msgs.data],
   )
+  useLayoutEffect(() => {
+    if (!matchMedia('(max-width: 1023px)').matches) return
+    box.current?.scrollIntoView({ block: 'start' })
+    heading.current?.focus({ preventScroll: true })
+  }, [box])
+
   useLayoutEffect(() => {
     const box = scroll.current
     if (!box || !messages.length) return
@@ -226,42 +294,40 @@ function Transcript({ id, nameOf, onClose, onUpdated }: {
     void handleAction('reply')
   }
 
-
   return (
-    <section className="card flex min-h-[60dvh] flex-col lg:sticky lg:top-6 lg:h-[calc(100dvh-3rem)]" aria-label="Nội dung hội thoại">
+    <section ref={box} className="card flex scroll-mt-16 flex-col overflow-hidden lg:sticky lg:top-4 lg:self-start" aria-label="Nội dung hội thoại">
       <header className="flex shrink-0 items-start gap-3 border-b border-line px-4 py-3">
         <button onClick={onClose} className="rounded-lg p-2 hover:bg-sunken lg:hidden" aria-label="Quay lại danh sách">
           <ArrowLeft className="h-4 w-4" aria-hidden />
         </button>
         <div className="min-w-0 flex-1">
+          <h2 ref={heading} tabIndex={-1} className="line-clamp-2 text-[15px] font-semibold leading-snug [overflow-wrap:anywhere]"
+            title={c ? c.title || who : undefined}>{c ? c.title || who : 'Nội dung hội thoại'}</h2>
           {c ? (
-            <>
-              <p className="line-clamp-2 font-semibold [overflow-wrap:anywhere]" title={c.title || who}>{c.title || who}</p>
-              <div className="mt-1 flex flex-wrap items-center gap-2">
-                <SourceBadge kind={s!.kind} label={nameOf(s!.key)} />
+              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-muted">
+                <span className="max-w-[16rem]"><SourceBadge kind={s!.kind} label={nameOf(s!.key)} /></span>
                 <StatusPill status={c.status} />
                 {c.status === 'needs_human' && !!c.handoff_since && (
                   <span title={fmtTime(c.handoff_since)}>Cần hỗ trợ từ {fmtTime(c.handoff_since)}</span>
                 )}
-                {c.title && <span className="text-xs text-muted">{who}</span>}
-                <span className="text-xs text-muted">Bắt đầu {fmtTime(c.started_at)}</span>
+                <span>{c.message_count} tin · bắt đầu {fmtTime(c.started_at)}</span>
+                <span className="truncate font-mono" title={who}>{nameOnly(c) || who}</span>
               </div>
-            </>
           ) : conv.error ? (
             <ErrorBox message={conv.error} onRetry={conv.reload} />
           ) : (
-            <div className="skeleton h-10 w-48" />
+            <div className="skeleton mt-2 h-4 w-48" />
           )}
         </div>
-        <button className="btn-ghost h-9 px-3" disabled={!messages.length || exporting}
+        <button className="btn-ghost h-9 shrink-0 px-2.5" disabled={!messages.length || exporting}
           title={exporting ? 'Đang xuất Excel' : 'Xuất toàn bộ hội thoại'} aria-label="Xuất Excel" onClick={exportTranscript}>
-          <Download className="h-4 w-4" aria-hidden /> <span className="hidden sm:inline">Xuất Excel</span>
+          <Download className="h-4 w-4" aria-hidden /> <span className="hidden 2xl:inline">Xuất Excel</span>
         </button>
         <button onClick={onClose} className="hidden rounded-lg p-2 hover:bg-sunken lg:block" aria-label="Đóng">
           <X className="h-4 w-4" aria-hidden />
         </button>
       </header>
-      <div ref={scroll} className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-sunken/50 px-4 py-4 [overflow-anchor:none]">
+      <div ref={scroll} className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain bg-sunken/40 px-4 py-5 [overflow-anchor:none] sm:px-5">
         {msgs.error && !messages.length ? (
           <ErrorBox message={msgs.error} onRetry={msgs.reload} />
         ) : !msgs.data && !messages.length ? (
@@ -282,12 +348,14 @@ function Transcript({ id, nameOf, onClose, onUpdated }: {
             const mine = m.sender === 'user'
             return (
               <div key={m.id} className={`flex flex-col ${mine ? 'items-start' : 'items-end'}`}>
-                <div className={`max-w-[85%] whitespace-pre-wrap break-words rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed [overflow-wrap:anywhere] ${
-                  mine ? 'rounded-bl-md bg-surface shadow-card' : m.sender === 'assistant' ? 'rounded-br-md bg-accent text-white' : 'rounded-br-md bg-ok text-white'
+                <div className={`max-w-[88%] whitespace-pre-wrap rounded-2xl px-4 py-3 text-sm leading-relaxed [overflow-wrap:anywhere] ${
+                  mine ? 'rounded-bl-md border border-line bg-surface'
+                    : m.sender === 'assistant' ? 'rounded-br-md border border-accent/25 bg-accent-soft'
+                    : 'rounded-br-md border border-ok/30 bg-ok/10'
                 }`}>
-                  {m.content && (!m.has_image || m.content !== '[ảnh]') && m.content}
+                  {m.content && (!m.has_image || m.content !== '[ảnh]') && <Md text={m.content} />}
                   {m.has_image ? <WebAttachment conversationId={id} messageId={m.id} />
-                    : !m.content && <em className="opacity-70">[không có nội dung văn bản]</em>}
+                    : !m.content && <em className="text-muted">[không có nội dung văn bản]</em>}
                   {m.sender === 'assistant' && <MessageSources citations={m.metadata?.citations} />}
                 </div>
                 <span className="mt-1 px-1 text-[11px] text-muted">{SENDER[m.sender] || m.sender} · {fmtTime(m.created_at)}</span>
@@ -361,6 +429,7 @@ export default function Conversations() {
   const nameOf = (k: string) => srcs.data?.find((s) => s.source === k)?.name || k.replace(/^web:/, '')
   const total = currentList?.total || 0
   const pages = Math.max(1, Math.ceil(total / LIMIT))
+  const listBox = useFitHeight()
   useEffect(() => {
     if (!list.loading && currentList && page >= pages) set({ page: pages - 1 })
   }, [list.loading, currentList, page, pages])
@@ -375,6 +444,7 @@ export default function Conversations() {
 
   return (
     <>
+      <div className={openId > 0 ? 'hidden lg:block' : undefined}>
       <PageHeader
         title="Hội thoại"
         desc="Lịch sử hỏi đáp của người dân, lọc theo nguồn và thời gian."
@@ -433,13 +503,15 @@ export default function Conversations() {
         </div>
         <button className="btn-ghost" disabled={!source && !from && !to} onClick={() => set({ source: '', from: '', to: '', page: 0, id: 0 })}>Xóa lọc</button>
       </div>
+      </div>
 
-      <div className={`grid gap-4 ${openId ? 'lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]' : ''}`}>
-        <section className={`card ${openId ? 'hidden lg:block' : ''}`} aria-label="Danh sách hội thoại">
-          <div className="flex items-center justify-between border-b border-line px-4 py-3 text-sm text-muted" aria-live="polite">
+      <div className={`grid gap-4 ${openId ? 'lg:grid-cols-[minmax(280px,360px)_minmax(0,1fr)] xl:grid-cols-[400px_minmax(0,1fr)]' : ''}`}>
+        <section ref={listBox} className={`card flex-col overflow-hidden ${openId ? 'hidden lg:flex' : 'flex'}`} aria-label="Danh sách hội thoại">
+          <div className="flex shrink-0 items-center justify-between border-b border-line px-4 py-3 text-sm text-muted" aria-live="polite">
             <span>{currentList ? <><span className="num font-medium text-ink">{total.toLocaleString('vi-VN')}</span> hội thoại</> : !list.error && 'Đang tải...'}</span>
-            <span className="num">Trang {page + 1}/{pages}</span>
+            {total > 0 && <span className="num">{page * LIMIT + 1}–{Math.min(total, (page + 1) * LIMIT)}</span>}
           </div>
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
           {list.error ? (
             <ErrorBox message={list.error} onRetry={list.reload} />
           ) : !currentList ? (
@@ -456,18 +528,18 @@ export default function Conversations() {
                   <li key={c.id}>
                     <button onClick={() => set({ id: c.id })} disabled={list.loading} aria-current={active || undefined}
                       className={`w-full px-4 py-3 text-left transition-colors ${active ? 'bg-accent-soft' : 'hover:bg-sunken'}`}>
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="truncate text-sm font-medium" title={c.title || undefined}>{c.title || whoOf(c)}</span>
+                      <div className="flex items-start justify-between gap-3">
+                        <span className="line-clamp-2 text-sm font-medium leading-snug [overflow-wrap:anywhere]" title={c.title || undefined}>{c.title || whoOf(c)}</span>
                         <span className="mt-0.5 shrink-0 whitespace-nowrap text-xs text-muted"
                           title={fmtTime(queue ? c.handoff_since || c.last_message_at : c.last_message_at)}>
                           {queue && 'Chờ từ '}{fmtAgo(queue ? c.handoff_since || c.last_message_at : c.last_message_at)}
                         </span>
                       </div>
-                      <div className="mt-1.5 flex items-center gap-2">
-                        <span className="min-w-0"><SourceBadge kind={s.kind} label={nameOf(s.key)} /></span>
+                      <div className="mt-2 flex items-center gap-2">
+                        <span className="min-w-0 max-w-[60%]"><SourceBadge kind={s.kind} label={nameOf(s.key)} /></span>
                         <StatusPill status={c.status} />
-                        {c.title && <span className="min-w-0 truncate text-xs text-muted">{whoOf(c)}</span>}
-                        <span className="num ml-auto shrink-0 text-xs text-muted">{c.message_count} tin</span>
+                        {c.title && nameOnly(c) && <span className="min-w-0 truncate text-xs text-muted">{nameOnly(c)}</span>}
+                        <span className="num ml-auto shrink-0 whitespace-nowrap text-xs text-muted">{c.message_count} tin</span>
                       </div>
                     </button>
                   </li>
@@ -475,14 +547,8 @@ export default function Conversations() {
               })}
             </ul>
           )}
-          <nav className="flex items-center justify-between border-t border-line px-4 py-3" aria-label="Phân trang">
-            <button className="btn-ghost h-9 px-3" disabled={page === 0} onClick={() => set({ page: page - 1 })}>
-              <ChevronLeft className="h-4 w-4" aria-hidden /> Trước
-            </button>
-            <button className="btn-ghost h-9 px-3" disabled={page + 1 >= pages} onClick={() => set({ page: page + 1 })}>
-              Sau <ChevronRight className="h-4 w-4" aria-hidden />
-            </button>
-          </nav>
+          </div>
+          {pages > 1 && <Pager page={page} pages={pages} onGo={(p) => set({ page: p })} />}
         </section>
 
         {openId > 0 && <Transcript key={openId} id={openId} nameOf={nameOf} onClose={() => set({ id: 0 })} onUpdated={list.reload} />}

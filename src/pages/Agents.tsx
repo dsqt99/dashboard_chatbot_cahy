@@ -1,14 +1,19 @@
-import { Bot, Pencil, Plus, Trash2 } from 'lucide-react'
+import { Bot, FlaskConical, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import Modal from '../components/Modal'
-import { Empty, ErrorBox, PageHeader, fmtTime } from '../components/ui'
+import { DeptError, DeptOptions, Empty, ErrorBox, OrphanDept, PageHeader, fmtTime } from '../components/ui'
 import { useAsync } from '../hooks/useAsync'
-import { api, type Agent, type Department, type Doc } from '../lib/api'
+import { api, type Agent, type Doc } from '../lib/api'
+import AgentChat from './AgentChat'
 
 export default function Agents() {
   const agents = useAsync(api.listAgents, [])
   const scopes = useAsync(api.scopes, [])
-  const depts = useAsync(() => api.departments().catch(() => [] as Department[]), [])
+  const depts = useAsync(() => api.departments(), [])
+  const oas = useAsync(api.listOAs, [])
+  const portals = useAsync(api.listPortals, [])
+  const [testing, setTesting] = useState<Agent | null>(null)
 
   const [err, setErr] = useState('')
   const [formOpen, setFormOpen] = useState(false)
@@ -71,6 +76,8 @@ export default function Agents() {
     }
   }
 
+  const allDocsSelected = docs.length > 0 && docs.every((d) => selectedDocs.includes(d.source_id))
+
   const toggleDoc = (id: string) => {
     setSelectedDocs((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
   }
@@ -114,8 +121,8 @@ export default function Agents() {
   return (
     <>
       <PageHeader
-        title="Quản lý Agent"
-        desc="Cấu hình trợ lý AI theo lĩnh vực tri thức, phạm vi tài liệu và system prompt."
+        title="Agent"
+        desc="Cấu hình trợ lý AI, chạy thử ngay, rồi gắn vào kênh Zalo OA hoặc cổng web."
         actions={
           <button className="btn-primary" onClick={openCreate}>
             <Plus className="h-4 w-4" aria-hidden /> Tạo Agent
@@ -146,13 +153,18 @@ export default function Agents() {
                   <span className="rounded-md bg-sunken px-2 py-0.5 font-mono text-xs text-muted">{a.agent_id}</span>
                 </div>
                 <p className="text-xs text-muted">
-                  {a.department_name || 'Chưa gán phòng ban'}
+                  {a.department_name || 'Chưa gán phòng ban'}<OrphanDept id={a.department_id} depts={depts.data} />
                   {a.knowledge_type ? ` · Tri thức: ${a.knowledge_type}` : ' · Toàn bộ tri thức'}
                   {a.document_ids?.length ? ` · ${a.document_ids.length} tài liệu chọn riêng` : ' · Toàn bộ tài liệu'}
                   {a.created_at ? ` · Tạo ${fmtTime(a.created_at)}` : ''}
                 </p>
+                <ChannelUsage oaCount={oas.data?.filter((o) => o.agent_id === a.agent_id).length}
+                  portalCount={portals.data?.portals.filter((p) => p.agent_id === a.agent_id).length} />
               </div>
               <div className="flex items-center gap-2">
+                <button type="button" onClick={() => setTesting(a)} className="btn-primary h-9 px-3 text-xs">
+                  <FlaskConical className="h-3.5 w-3.5" aria-hidden /> Chạy thử
+                </button>
                 <button type="button" onClick={() => openEdit(a)} className="btn-ghost h-9 px-3 text-xs">
                   <Pencil className="h-3.5 w-3.5" aria-hidden /> Sửa
                 </button>
@@ -177,9 +189,9 @@ export default function Agents() {
             <div>
               <label htmlFor="ag-dept" className="label">Phòng ban phụ trách</label>
               <select id="ag-dept" className="field" value={deptId} onChange={(e) => setDeptId(e.target.value)}>
-                <option value="">Không gán phòng ban</option>
-                {depts.data?.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                <DeptOptions value={deptId} depts={depts.data} />
               </select>
+              {depts.error && <DeptError message={depts.error} onRetry={depts.reload} />}
             </div>
             <div>
               <label htmlFor="ag-scope" className="label">Knowledge Type (bộ lọc tri thức)</label>
@@ -210,6 +222,17 @@ export default function Agents() {
                 <p className="p-2 text-xs text-muted">Không có tài liệu nào trong lĩnh vực này.</p>
               ) : (
                 <div className="space-y-1">
+                  <label className="flex cursor-pointer items-center gap-2 rounded border-b border-line px-2 pb-1.5 pt-1 text-xs font-medium hover:bg-surface">
+                    <input type="checkbox" checked={allDocsSelected}
+                      ref={(el) => { if (el) el.indeterminate = !allDocsSelected && docs.some((d) => selectedDocs.includes(d.source_id)) }}
+                      onChange={() => {
+                        const ids = docs.map((d) => d.source_id)
+                        setSelectedDocs((prev) => allDocsSelected
+                          ? prev.filter((x) => !ids.includes(x))
+                          : [...new Set([...prev, ...ids])])
+                      }} />
+                    Chọn tất cả ({docs.length})
+                  </label>
                   {docs.map((d) => (
                     <label key={d.source_id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-xs hover:bg-surface">
                       <input type="checkbox" checked={selectedDocs.includes(d.source_id)} onChange={() => toggleDoc(d.source_id)} />
@@ -239,7 +262,21 @@ export default function Agents() {
           </div>
         </form>
       </Modal>
+
+      {testing && <AgentChat agent={testing} onClose={() => setTesting(null)} />}
     </>
+  )
+}
+
+function ChannelUsage({ oaCount, portalCount }: { oaCount?: number; portalCount?: number }) {
+  if (oaCount === undefined && portalCount === undefined) return null
+  const parts = [oaCount ? `${oaCount} Zalo OA` : '', portalCount ? `${portalCount} cổng web` : ''].filter(Boolean)
+  return (
+    <p className="text-xs">
+      {parts.length
+        ? <span className="text-ok">Đang dùng ở {parts.join(', ')}</span>
+        : <span className="text-warn">Chưa gắn kênh nào · <Link to="/oas" className="text-accent hover:underline">Gắn vào kênh</Link></span>}
+    </p>
   )
 }
 

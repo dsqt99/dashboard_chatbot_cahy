@@ -1,12 +1,12 @@
-import { Code2, Pencil, Plus, Power, Trash2 } from 'lucide-react'
-import { useState, type FormEvent } from 'react'
-import { NavLink } from 'react-router-dom'
+import { Code2, ImagePlus, MessagesSquare, Pencil, Plus, Power, Trash2, X } from 'lucide-react'
+import { useRef, useState, type FormEvent } from 'react'
+import { Link, NavLink } from 'react-router-dom'
 import Modal from '../components/Modal'
-import { CopyField, Empty, ErrorBox, PageHeader, fmtAgo } from '../components/ui'
+import { CopyField, DeptError, DeptOptions, Empty, ErrorBox, OrphanDept, PageHeader, fmtAgo, fmtNum } from '../components/ui'
 import { useAsync } from '../hooks/useAsync'
-import { api, type Department, type Portal, type PortalWidget } from '../lib/api'
+import { api, type Portal, type PortalWidget, type Source } from '../lib/api'
 
-// Tab chung cho trang Zalo OA và Cổng web (cùng mục "Kênh Zalo OA & Web" trên menu).
+// Tab chung cho trang Zalo OA và Cổng web (cùng mục "Kênh kết nối" trên menu).
 export function ChannelTabs() {
   const tab = ({ isActive }: { isActive: boolean }) =>
     `-mb-px border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
@@ -20,19 +20,108 @@ export function ChannelTabs() {
   )
 }
 
+const convLink = (keys: string[]) => keys.length === 1 ? `/conversations?source=${encodeURIComponent(keys[0])}` : '/conversations'
+
+// Số liệu hoạt động của một kênh (gộp từ một hoặc nhiều nguồn), kèm lối tắt sang Hội thoại.
+export function SourceStats({ sources }: { sources?: Source[] }) {
+  if (!sources) return null
+  const conv = sources.reduce((n, s) => n + s.conversations, 0)
+  const msgs = sources.reduce((n, s) => n + s.messages, 0)
+  const last = Math.max(0, ...sources.map((s) => s.last_message_at))
+  return (
+    <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
+      <span className="num">{fmtNum(conv)} hội thoại · {fmtNum(msgs)} tin</span>
+      <span>{last ? `Gần nhất ${fmtAgo(last)}` : 'Chưa có hội thoại'}</span>
+      {conv > 0 && (
+        <Link to={convLink(sources.map((s) => s.source))} className="inline-flex items-center gap-1 font-medium text-accent hover:underline">
+          <MessagesSquare className="h-3.5 w-3.5" aria-hidden /> Xem hội thoại
+        </Link>
+      )}
+    </p>
+  )
+}
+
+const bareHost = (d: string) => d.trim().toLowerCase().replace(/^[a-z]+:\/\//, '').replace(/[/:].*$/, '')
+const portalOwns = (p: Portal, s: Source) => {
+  const host = s.source.replace(/^web:/, '').toLowerCase()
+  return p.domains.some((d) => { const h = bareHost(d); return h && (host === h || host.endsWith(`.${h}`)) })
+}
+
 type Form = { name: string; domains: string; agent_id: string; department_id: string; suggestions: string } & Omit<PortalWidget, 'suggestions'>
 
 const EMPTY: Form = {
   name: '', domains: '', agent_id: '', department_id: '', suggestions: '',
   title: '', brand: '', tagline: '', tooltip: '', welcome: '', placeholder: '', position: 'right',
+  bot_avatar: '', title_avatar: '',
 }
 
 const lines = (s: string) => s.split('\n').map((x) => x.trim()).filter(Boolean)
 
+// Cắt vuông giữa ảnh, thu về 160px rồi trả data URL — lưu thẳng trong cấu hình widget.
+function shrinkImage(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file)
+    const img = new Image()
+    img.onload = () => {
+      const S = 160
+      const side = Math.min(img.width, img.height)
+      const c = document.createElement('canvas')
+      c.width = c.height = S
+      c.getContext('2d')!.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, S, S)
+      URL.revokeObjectURL(url)
+      const out = c.toDataURL('image/webp', 0.86)
+      resolve(out.startsWith('data:image/webp') ? out : c.toDataURL('image/png'))
+    }
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Không đọc được ảnh.')) }
+    img.src = url
+  })
+}
+
+function AvatarField({ id, label, hint, value, onChange, onError }: {
+  id: string; label: string; hint: string; value?: string
+  onChange: (v: string) => void; onError: (m: string) => void
+}) {
+  const input = useRef<HTMLInputElement>(null)
+  const pick = async (file?: File) => {
+    if (!file) return
+    if (!/^image\/(png|jpeg|webp)$/.test(file.type)) return onError('Chỉ nhận ảnh PNG, JPEG hoặc WebP.')
+    if (file.size > 5 * 1024 * 1024) return onError('Ảnh quá lớn (tối đa 5 MB).')
+    try { onChange(await shrinkImage(file)) } catch (e) { onError((e as Error).message) }
+  }
+  return (
+    <div className="flex items-center gap-3">
+      <button type="button" onClick={() => input.current?.click()} aria-describedby={`${id}-hint`}
+        className="grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-full border border-dashed border-line bg-surface text-muted transition-colors hover:border-accent hover:text-accent">
+        {value ? <img src={value} alt="" className="h-full w-full object-cover" /> : <ImagePlus className="h-5 w-5" aria-hidden />}
+        <span className="sr-only">Chọn {label.toLowerCase()}</span>
+      </button>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium">{label}</p>
+        <p id={`${id}-hint`} className="text-xs text-muted">{hint}</p>
+        <div className="mt-1 flex gap-3 text-xs">
+          <button type="button" className="font-medium text-accent hover:underline" onClick={() => input.current?.click()}>
+            {value ? 'Đổi ảnh' : 'Tải ảnh lên'}
+          </button>
+          {value && (
+            <button type="button" className="inline-flex items-center gap-0.5 text-muted hover:text-danger" onClick={() => onChange('')}>
+              <X className="h-3 w-3" aria-hidden /> Dùng mặc định
+            </button>
+          )}
+        </div>
+      </div>
+      <input ref={input} id={id} type="file" accept="image/png,image/jpeg,image/webp" className="hidden"
+        onChange={(e) => { pick(e.target.files?.[0]); e.target.value = '' }} />
+    </div>
+  )
+}
+
 export default function Portals() {
   const list = useAsync(api.listPortals, [])
   const agents = useAsync(api.listAgents, [])
-  const depts = useAsync(() => api.departments().catch(() => [] as Department[]), [])
+  const depts = useAsync(() => api.departments(), [])
+  const sources = useAsync(api.sources, [])
+  const web = sources.data?.filter((s) => s.kind === 'web')
+  const unmatched = web?.filter((s) => !list.data?.portals.some((p) => portalOwns(p, s)))
 
   const [err, setErr] = useState('')
   const [editing, setEditing] = useState<Portal | null>(null)
@@ -42,6 +131,7 @@ export default function Portals() {
   const [embed, setEmbed] = useState<Portal | null>(null)
 
   const set = (patch: Partial<Form>) => setF((cur) => ({ ...cur, ...patch }))
+  const sugCount = lines(f.suggestions).length
   const agentName = (id?: string | null) => (id ? agents.data?.find((a) => a.agent_id === id)?.name || id : 'Agent mặc định')
   const snippet = (p: Portal) => `<script src="${list.data?.script_url}" data-key="${p.portal_id}" defer></script>`
 
@@ -100,7 +190,7 @@ export default function Portals() {
   return (
     <>
       <PageHeader
-        title="Kênh Zalo OA & Web"
+        title="Kênh kết nối"
         desc="Tạo widget chatbot nhúng cho cổng thông tin điện tử: gán Agent, giới hạn tên miền, tuỳ chỉnh lời chào."
         actions={
           <button className="btn-primary" onClick={() => openForm(null)}>
@@ -132,10 +222,11 @@ export default function Portals() {
                 </div>
                 <p className="text-xs text-muted [overflow-wrap:anywhere]">
                   Agent: <span className="font-medium text-ink">{agentName(p.agent_id)}</span>
-                  {p.department_name ? ` · ${p.department_name}` : ''}
+                  {p.department_name ? ` · ${p.department_name}` : ''}<OrphanDept id={p.department_id} depts={depts.data} />
                   {` · ${p.domains.length ? p.domains.join(', ') : 'Mọi tên miền'}`}
                   {p.created_at ? ` · tạo ${fmtAgo(p.created_at)}` : ''}
                 </p>
+                <SourceStats sources={web?.filter((s) => portalOwns(p, s))} />
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <button type="button" onClick={() => act(() => api.updatePortal(p.portal_id, { enabled: !p.enabled }))}
@@ -157,6 +248,21 @@ export default function Portals() {
             </article>
           ))}
         </div>
+      )}
+
+      {!!unmatched?.length && list.data && (
+        <section className="card mt-5 p-5" aria-labelledby="unmatched-web">
+          <h2 id="unmatched-web" className="text-sm font-semibold">Nguồn web chưa gắn cổng</h2>
+          <p className="mb-3 text-xs text-muted">Hội thoại đến từ tên miền chưa khai báo trong cổng nào. Thêm tên miền vào cổng để quản lý tập trung.</p>
+          <ul className="divide-y divide-line">
+            {unmatched.map((s) => (
+              <li key={s.source} className="flex flex-col gap-1 py-2 sm:flex-row sm:items-center sm:justify-between">
+                <span className="font-mono text-xs [overflow-wrap:anywhere]">{s.source.replace(/^web:/, '')}</span>
+                <SourceStats sources={[s]} />
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       <Modal open={formOpen} onClose={() => setFormOpen(false)} maxWidth="max-w-2xl"
@@ -184,14 +290,20 @@ export default function Portals() {
             <div>
               <label htmlFor="pt-dept" className="label">Phòng ban</label>
               <select id="pt-dept" className="field" value={f.department_id} onChange={(e) => set({ department_id: e.target.value })}>
-                <option value="">Không gán phòng ban</option>
-                {depts.data?.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                <DeptOptions value={f.department_id} depts={depts.data} />
               </select>
+              {depts.error && <DeptError message={depts.error} onRetry={depts.reload} />}
             </div>
           </div>
 
           <fieldset className="space-y-3 rounded-lg border border-line p-4">
             <legend className="px-1 text-sm font-semibold">Giao diện widget</legend>
+            <div className="grid gap-4 rounded-lg bg-sunken/60 p-3 sm:grid-cols-2">
+              <AvatarField id="pw-bot-avatar" label="Ảnh trợ lý" hint="Nút mở chat và cạnh tin nhắn"
+                value={f.bot_avatar} onChange={(v) => set({ bot_avatar: v })} onError={setErr} />
+              <AvatarField id="pw-title-avatar" label="Ảnh đầu khung chat" hint="Logo / huy hiệu đơn vị"
+                value={f.title_avatar} onChange={(v) => set({ title_avatar: v })} onError={setErr} />
+            </div>
             <div className="grid gap-3 sm:grid-cols-2">
               {text('title', 'Tiêu đề khung chat', 'Trợ lý ảo Công an tỉnh')}
               {text('brand', 'Tên đơn vị', 'Công an tỉnh Hưng Yên')}
@@ -208,11 +320,17 @@ export default function Portals() {
             </div>
             <div>
               <label htmlFor="pw-welcome" className="label">Lời chào (hỗ trợ markdown)</label>
-              <textarea id="pw-welcome" rows={3} className="field" value={f.welcome || ''} onChange={(e) => set({ welcome: e.target.value })} />
+              <textarea id="pw-welcome" rows={4} className="field" value={f.welcome || ''} onChange={(e) => set({ welcome: e.target.value })}
+                placeholder={'# Xin chào!\nTôi có thể hỗ trợ bạn tra cứu thủ tục hành chính...'} />
             </div>
             <div>
-              <label htmlFor="pw-sugg" className="label">Câu hỏi gợi ý (mỗi dòng một câu, tối đa 8)</label>
-              <textarea id="pw-sugg" rows={3} className="field" value={f.suggestions} onChange={(e) => set({ suggestions: e.target.value })} />
+              <div className="flex items-baseline justify-between">
+                <label htmlFor="pw-sugg" className="label">Câu hỏi gợi ý (mỗi dòng một câu)</label>
+                <span className={`num text-xs ${sugCount > 8 ? 'text-danger' : 'text-muted'}`}>{sugCount}/8</span>
+              </div>
+              <textarea id="pw-sugg" rows={4} className="field" value={f.suggestions} onChange={(e) => set({ suggestions: e.target.value })}
+                placeholder={'Làm căn cước ở đâu?\nThủ tục đăng ký tạm trú'} />
+              {sugCount > 8 && <p className="mt-1 text-xs text-danger">Chỉ 8 câu đầu được hiển thị trên widget.</p>}
             </div>
             <p className="text-xs text-muted">Để trống trường nào thì widget dùng nội dung mặc định.</p>
           </fieldset>

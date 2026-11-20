@@ -63,6 +63,11 @@
   .field {
     @apply h-10 w-full rounded-lg border border-line bg-surface px-3 text-sm text-ink placeholder:text-muted/70 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20;
   }
+  /* textarea: bỏ h-10 của .field, tự giãn theo nội dung (field-sizing), có trần + kéo dọc */
+  textarea.field {
+    @apply h-auto min-h-[5.5rem] max-h-72 resize-y py-2.5 leading-relaxed;
+    field-sizing: content;
+  }
   .label {
     @apply mb-1.5 block text-xs font-medium text-muted;
   }
@@ -80,3 +85,24 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Markdown chỉ đọc (nội dung trích xuất & trang Wiki) */
+.md { @apply text-sm leading-relaxed [overflow-wrap:anywhere]; }
+.md > * + * { @apply mt-3; }
+.md p, .md li, .md blockquote { @apply max-w-[80ch]; }
+.md h1 { @apply mt-6 text-xl font-semibold; }
+.md h2 { @apply mt-5 text-lg font-semibold; }
+.md h3, .md h4 { @apply mt-4 font-semibold; }
+.md ul { @apply list-disc pl-5; }
+.md ol { @apply list-decimal pl-5; }
+.md li + li { @apply mt-1; }
+.md a { @apply text-accent underline; }
+.md strong { @apply font-semibold; }
+.md blockquote { @apply border-l-2 border-line pl-3 text-muted; }
+.md code { @apply rounded bg-sunken px-1 py-0.5 text-[0.85em]; }
+.md pre { @apply overflow-x-auto rounded-lg bg-sunken p-3; }
+.md pre code { @apply bg-transparent p-0; }
+.md table { @apply block max-w-full overflow-x-auto border-collapse text-left; }
+.md th, .md td { @apply border border-line px-2.5 py-1.5 align-top; }
+.md th { @apply bg-sunken font-medium; }
+.md hr { @apply border-line; }

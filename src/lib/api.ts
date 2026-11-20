@@ -211,6 +211,8 @@ export interface PortalWidget {
   placeholder?: string
   position?: 'left' | 'right'
   suggestions?: string[]
+  bot_avatar?: string // data:image/...;base64 — nút mở + tin nhắn bot
+  title_avatar?: string // data:image/...;base64 — đầu khung chat
 }
 
 export interface Portal {
@@ -253,9 +255,10 @@ export interface Message {
 }
 
 export interface Overview {
-  oas: { total: number; active: number; connected: number; messages: number }
+  oas: { total: number; active: number; connected: number; webhook_verified: number; messages: number }
   agents: { total: number }
   conversations: { total: number; messages: number; last_message_at: number }
+  queues: QueueStatus
 }
 
 export interface DailyPoint {

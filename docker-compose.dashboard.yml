@@ -16,6 +16,7 @@ services:
       - "traefik.http.middlewares.dashboard-web-https-redirect.redirectscheme.scheme=https"
     environment:
       ADMIN_API_UPSTREAM: ${ADMIN_API_UPSTREAM:-http://zalo-oa:8081}
+      WIKI_API_UPSTREAM: ${WIKI_API_UPSTREAM:-http://host.docker.internal:5055}
     networks:
       - proxy-net
     restart: unless-stopped
