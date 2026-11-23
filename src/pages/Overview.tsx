@@ -202,7 +202,6 @@ export default function Overview() {
         <section className="card" aria-labelledby="h-health">
           <div className="flex items-center justify-between px-5 pt-5 pb-2">
             <h2 id="h-health" className="font-semibold">Vận hành</h2>
-            <Link to="/operations" className="text-sm font-medium text-accent hover:underline">Chi tiết</Link>
           </div>
           {ov.error ? <ErrorBox message={ov.error} onRetry={ov.reload} /> : <Health data={ov.data} />}
         </section>

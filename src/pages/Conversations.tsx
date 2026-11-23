@@ -188,14 +188,27 @@ function Transcript({ id, nameOf, onClose, onUpdated }: {
   const [actionError, setActionError] = useState('')
   const [notice, setNotice] = useState('')
   const [history, setHistory] = useState<{ messages: Message[]; beforeId: number | null } | null>(null)
+  const [liveMessages, setLiveMessages] = useState<Message[]>([])
+  const [liveConv, setLiveConv] = useState<Conversation | null>(null)
   const [loadingOlder, setLoadingOlder] = useState(false)
   const [olderError, setOlderError] = useState('')
   const [exporting, setExporting] = useState(false)
+  const lastMsgIdRef = useRef(0)
+  const nearBottomRef = useRef(true)
+  const onUpdatedRef = useRef(onUpdated)
+  onUpdatedRef.current = onUpdated
   const beforeId = history ? history.beforeId : msgs.data?.next_before_id
   const messages = useMemo(
-    () => joinMessages(history?.messages ?? [], msgs.data?.messages ?? []),
-    [history, msgs.data],
+    () => joinMessages(joinMessages(history?.messages ?? [], msgs.data?.messages ?? []), liveMessages),
+    [history, msgs.data, liveMessages],
   )
+  const c = liveConv ?? conv.data
+  const liveActive = !!c && c.status !== 'closed'
+
+  useEffect(() => {
+    setLiveConv(null)
+  }, [conv.data])
+
   useLayoutEffect(() => {
     if (!matchMedia('(max-width: 1023px)').matches) return
     box.current?.scrollIntoView({ block: 'start' })
@@ -203,12 +216,76 @@ function Transcript({ id, nameOf, onClose, onUpdated }: {
   }, [box])
 
   useLayoutEffect(() => {
-    const box = scroll.current
-    if (!box || !messages.length) return
+    const el = scroll.current
+    if (!el || !messages.length) return
     const anchor = prependAnchor.current
-    box.scrollTop = anchor ? anchor.top + box.scrollHeight - anchor.height : box.scrollHeight
-    prependAnchor.current = null
+    const lastId = messages[messages.length - 1]?.id ?? 0
+    if (anchor) {
+      el.scrollTop = anchor.top + el.scrollHeight - anchor.height
+      prependAnchor.current = null
+    } else if (lastMsgIdRef.current === 0 || (lastId !== lastMsgIdRef.current && nearBottomRef.current)) {
+      el.scrollTop = el.scrollHeight
+    }
+    lastMsgIdRef.current = lastId
   }, [messages])
+
+  const liveSnapshotRef = useRef({ lastId: 0, status: '', messageCount: 0, lastAt: 0 })
+  liveSnapshotRef.current = {
+    lastId: messages[messages.length - 1]?.id ?? 0,
+    status: c?.status ?? '',
+    messageCount: c?.message_count ?? 0,
+    lastAt: c?.last_message_at ?? 0,
+  }
+
+  // Tự đồng bộ tin mới mỗi 4 giây khi hội thoại chưa đóng (im lặng, không nháy loading).
+  useEffect(() => {
+    if (!liveActive) return
+    let alive = true
+    let inFlight = false
+    let timer: number | undefined
+
+    const poll = async () => {
+      if (!alive || inFlight || document.hidden) return
+      inFlight = true
+      try {
+        const [latestConv, latestMsgs] = await Promise.all([api.conversation(id), api.recentMessages(id)])
+        if (!alive) return
+        const snap = liveSnapshotRef.current
+        const latestLastId = latestMsgs.messages[latestMsgs.messages.length - 1]?.id ?? 0
+        const convChanged =
+          latestConv.status !== snap.status ||
+          latestConv.message_count !== snap.messageCount ||
+          latestConv.last_message_at !== snap.lastAt
+        const hasNewMsg = latestLastId > snap.lastId
+        if (hasNewMsg) {
+          setLiveMessages((prev) => joinMessages(prev, latestMsgs.messages))
+        }
+        if (convChanged) {
+          setLiveConv(latestConv)
+        }
+        if (hasNewMsg || convChanged) {
+          onUpdatedRef.current()
+        }
+      } catch {
+        /* giữ nguyên UI hiện tại nếu mạng chập chờn */
+      } finally {
+        inFlight = false
+        if (alive && !document.hidden) timer = window.setTimeout(poll, 4000)
+      }
+    }
+
+    const onVisibility = () => {
+      window.clearTimeout(timer)
+      if (!document.hidden) void poll()
+    }
+    timer = window.setTimeout(poll, 4000)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      alive = false
+      window.clearTimeout(timer)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [id, liveActive])
 
   const loadOlder = async () => {
     if (!beforeId || loadingOlder) return
@@ -252,7 +329,6 @@ function Transcript({ id, nameOf, onClose, onUpdated }: {
     }
   }
 
-  const c = conv.data
   const s = c && sourceOf(c)
   const who = c ? whoOf(c) : ''
   const isWeb = c?.channel.startsWith('web:') && !c.oa_id
@@ -282,6 +358,7 @@ function Transcript({ id, nameOf, onClose, onUpdated }: {
             beforeId: prev ? prev.beforeId : latest.next_before_id,
           }))
         }
+        nearBottomRef.current = true
         msgs.reload()
       } else {
         await api.closeConversation(id)
@@ -344,6 +421,12 @@ function Transcript({ id, nameOf, onClose, onUpdated }: {
               )}
               <span>{c.message_count} tin · {fmtTime(c.started_at)}</span>
               <span className="truncate font-mono" title={who}>{nameOnly(c) || who}</span>
+              {liveActive && (
+                <span className="inline-flex items-center gap-1 text-ok" title="Tự động cập nhật tin mới mỗi 4 giây">
+                  <span className="h-1.5 w-1.5 rounded-full bg-ok animate-pulse" aria-hidden />
+                  Trực tiếp
+                </span>
+              )}
             </div>
           ) : conv.error ? (
             <ErrorBox message={conv.error} onRetry={conv.reload} />
@@ -379,7 +462,14 @@ function Transcript({ id, nameOf, onClose, onUpdated }: {
           <X className="h-4 w-4" aria-hidden />
         </button>
       </header>
-      <div ref={scroll} className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain bg-sunken/40 px-4 py-3.5 [overflow-anchor:none] sm:px-5">
+      <div
+        ref={scroll}
+        onScroll={(event) => {
+          const el = event.currentTarget
+          nearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+        }}
+        className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain bg-sunken/40 px-4 py-3.5 [overflow-anchor:none] sm:px-5"
+      >
         {msgs.error && !messages.length ? (
           <ErrorBox message={msgs.error} onRetry={msgs.reload} />
         ) : !msgs.data && !messages.length ? (

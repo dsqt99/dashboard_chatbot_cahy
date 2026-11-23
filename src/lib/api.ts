@@ -143,28 +143,6 @@ export interface QueueStatus {
   last_error_at: number
 }
 
-export interface FailedWebhook {
-  id: string
-  oa_id: string
-  event_name: string
-  user_id: string
-  attempt: number
-  queued_at: number
-}
-
-export interface DependencyStatus {
-  ok: boolean
-  detail: string
-}
-
-export interface SystemStatusResponse {
-  service: DependencyStatus
-  database: DependencyStatus
-  redis: DependencyStatus
-  chat: DependencyStatus
-  worker: DependencyStatus
-}
-
 export interface OABody {
   name?: string
   agent_id?: string
@@ -382,16 +360,6 @@ export const api = {
       signal,
       body: JSON.stringify(body),
     }),
-
-  // Vận hành & Webhook
-  systemStatus: () => request<SystemStatusResponse>('/system/status'),
-  webhookStatus: () => request<QueueStatus>('/webhooks/status'),
-  listFailedWebhooks: (offset = 0, limit = 50) =>
-    request<{ events: FailedWebhook[]; total: number }>(`/webhooks/failed?offset=${offset}&limit=${limit}`),
-  retryFailedWebhook: (eventId: string) =>
-    request<{ ok: boolean }>(`/webhooks/failed/${encodeURIComponent(eventId)}/retry`, { method: 'POST' }),
-  deleteFailedWebhook: (eventId: string) =>
-    request<{ ok: boolean }>(`/webhooks/failed/${encodeURIComponent(eventId)}`, { method: 'DELETE' }),
 
   // Quản lý tài khoản (Admin)
   listUsers: (status = '') =>

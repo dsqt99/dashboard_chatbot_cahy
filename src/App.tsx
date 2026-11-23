@@ -8,7 +8,6 @@ import Conversations from './pages/Conversations'
 import LoginPage from './pages/LoginPage'
 import OAs from './pages/OAs'
 import Portals from './pages/Portals'
-import Operations from './pages/Operations'
 import Overview from './pages/Overview'
 import Users from './pages/Users'
 import Wiki from './pages/Wiki'
@@ -40,7 +39,6 @@ function Dashboard({ user, logout, updateUser }: {
             onLogout={(token) => setWikiSession((current) => current?.token === token ? null : current)}
           />
         } />
-        <Route path="/operations" element={<Operations />} />
         <Route path="/users" element={user.role === 'admin' ? <Users /> : <Navigate to="/" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

@@ -1,5 +1,4 @@
 import {
-  Activity,
   BookOpen,
   Bot,
   ChevronsUpDown,
@@ -26,7 +25,6 @@ const NAV = [
   { to: '/oas', label: 'Kênh kết nối', icon: MessageSquarePlus },
   { to: '/conversations', label: 'Hội thoại', icon: MessagesSquare },
   { to: '/wiki', label: 'Document Wiki', icon: BookOpen },
-  { to: '/operations', label: 'Vận hành', icon: Activity },
   { to: '/users', label: 'Quản lý tài khoản', icon: Users, adminOnly: true },
 ]
 
