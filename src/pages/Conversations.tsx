@@ -1,12 +1,19 @@
-import { ArrowLeft, ChevronLeft, ChevronRight, Download, X } from 'lucide-react'
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { ArrowLeft, ChevronLeft, ChevronRight, Download, RefreshCw, Search, Send, X } from 'lucide-react'
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Empty, ErrorBox, PageHeader, SourceBadge, StatusPill, fmtAgo, fmtTime, sourceOf } from '../components/ui'
+import { Empty, ErrorBox, SourceBadge, StatusPill, fmtAgo, fmtTime, sourceOf } from '../components/ui'
 import { useAsync } from '../hooks/useAsync'
-import { api, type Citation, type Conversation, type Message } from '../lib/api'
+import { api, type Citation, type Conversation, type Message, type Source } from '../lib/api'
 
 const LIMIT = 30
 const SENDER: Record<string, string> = { user: 'Người dân', assistant: 'Trợ lý ảo', officer: 'Cán bộ', staff: 'Cán bộ', system: 'Hệ thống' }
+const CONV_STATUSES = [
+  { value: 'active', label: 'Đang mở' },
+  { value: 'needs_human', label: 'Cần cán bộ' },
+  { value: 'replied', label: 'Đã trả lời' },
+  { value: 'closed', label: 'Đã đóng' },
+] as const
+type EditableStatus = (typeof CONV_STATUSES)[number]['value']
 
 const whoOf = (c: Conversation) => c.user?.display_name || c.user_id || 'Khách ẩn danh'
 // Khách web ẩn danh chỉ có mã phiên ngẫu nhiên — không đáng hiển thị trong danh sách.
@@ -38,17 +45,17 @@ async function exportXlsx(rows: Record<string, unknown>[], sheet: string, file: 
 }
 
 // Khung vừa khít phần còn lại của màn hình: trang không cuộn, header/pager đứng yên, chỉ phần giữa cuộn.
-function useFitHeight() {
+function useFitHeight(dep?: unknown) {
   const box = useRef<HTMLElement>(null)
   useLayoutEffect(() => {
     const fit = () => {
       const el = box.current
-      if (el) el.style.height = `${Math.max(420, innerHeight - el.getBoundingClientRect().top - scrollY - 32)}px`
+      if (el) el.style.height = `${Math.max(460, innerHeight - el.getBoundingClientRect().top - scrollY - 16)}px`
     }
     fit()
     addEventListener('resize', fit)
     return () => removeEventListener('resize', fit)
-  }, [])
+  }, [dep])
   return box
 }
 
@@ -177,7 +184,7 @@ function Transcript({ id, nameOf, onClose, onUpdated }: {
   const heading = useRef<HTMLHeadingElement>(null)
   const [draft, setDraft] = useState('')
   const webReply = useRef<{ content: string; id: string } | null>(null)
-  const [pending, setPending] = useState<'reply' | 'close' | ''>('')
+  const [pending, setPending] = useState<'reply' | 'close' | 'status' | ''>('')
   const [actionError, setActionError] = useState('')
   const [notice, setNotice] = useState('')
   const [history, setHistory] = useState<{ messages: Message[]; beforeId: number | null } | null>(null)
@@ -289,45 +296,90 @@ function Transcript({ id, nameOf, onClose, onUpdated }: {
     }
   }
 
+  const changeStatus = async (nextStatus: EditableStatus) => {
+    if (pending || !c || c.status === nextStatus) return
+    setPending('status')
+    setActionError('')
+    setNotice('')
+    try {
+      await api.setConversationStatus(id, nextStatus)
+      const label = CONV_STATUSES.find((item) => item.value === nextStatus)?.label || nextStatus
+      setNotice(`Đã chuyển trạng thái sang "${label}".`)
+      conv.reload()
+      onUpdated()
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Không đổi được trạng thái. Vui lòng thử lại.')
+    } finally {
+      setPending('')
+    }
+  }
+
   const sendReply = (event: FormEvent) => {
     event.preventDefault()
     void handleAction('reply')
   }
 
+  const onDraftKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+      event.preventDefault()
+      void handleAction('reply')
+    }
+  }
+
   return (
     <section ref={box} className="card flex scroll-mt-16 flex-col overflow-hidden lg:sticky lg:top-4 lg:self-start" aria-label="Nội dung hội thoại">
-      <header className="flex shrink-0 items-start gap-3 border-b border-line px-4 py-3">
-        <button onClick={onClose} className="rounded-lg p-2 hover:bg-sunken lg:hidden" aria-label="Quay lại danh sách">
+      <header className="flex shrink-0 items-center gap-2.5 border-b border-line px-4 py-2.5">
+        <button onClick={onClose} className="rounded-lg p-1.5 hover:bg-sunken lg:hidden" aria-label="Quay lại danh sách">
           <ArrowLeft className="h-4 w-4" aria-hidden />
         </button>
         <div className="min-w-0 flex-1">
-          <h2 ref={heading} tabIndex={-1} className="line-clamp-2 text-[15px] font-semibold leading-snug [overflow-wrap:anywhere]"
+          <h2 ref={heading} tabIndex={-1} className="truncate text-sm font-semibold leading-snug"
             title={c ? c.title || who : undefined}>{c ? c.title || who : 'Nội dung hội thoại'}</h2>
           {c ? (
-              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-muted">
-                <span className="max-w-[16rem]"><SourceBadge kind={s!.kind} label={nameOf(s!.key)} /></span>
-                <StatusPill status={c.status} />
-                {c.status === 'needs_human' && !!c.handoff_since && (
-                  <span title={fmtTime(c.handoff_since)}>Cần hỗ trợ từ {fmtTime(c.handoff_since)}</span>
-                )}
-                <span>{c.message_count} tin · bắt đầu {fmtTime(c.started_at)}</span>
-                <span className="truncate font-mono" title={who}>{nameOnly(c) || who}</span>
-              </div>
+            <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted">
+              <span className="max-w-[15rem]"><SourceBadge kind={s!.kind} label={nameOf(s!.key)} /></span>
+              <StatusPill status={c.status} />
+              {c.status === 'needs_human' && !!c.handoff_since && (
+                <span title={fmtTime(c.handoff_since)}>Chờ từ {fmtTime(c.handoff_since)}</span>
+              )}
+              <span>{c.message_count} tin · {fmtTime(c.started_at)}</span>
+              <span className="truncate font-mono" title={who}>{nameOnly(c) || who}</span>
+            </div>
           ) : conv.error ? (
             <ErrorBox message={conv.error} onRetry={conv.reload} />
           ) : (
-            <div className="skeleton mt-2 h-4 w-48" />
+            <div className="skeleton mt-1.5 h-4 w-48" />
           )}
         </div>
-        <button className="btn-ghost h-9 shrink-0 px-2.5" disabled={!messages.length || exporting}
+        {c && (
+          <select
+            aria-label="Chuyển trạng thái hội thoại"
+            title="Chuyển trạng thái hội thoại"
+            className="field h-8 w-auto shrink-0 px-2.5 text-xs font-medium"
+            value={CONV_STATUSES.some((item) => item.value === c.status) ? c.status : ''}
+            disabled={!!pending || conv.loading}
+            onChange={(e) => {
+              const next = e.target.value as EditableStatus
+              if (next) void changeStatus(next)
+            }}
+          >
+            {!CONV_STATUSES.some((item) => item.value === c.status) && (
+              <option value="" disabled>{c.status}</option>
+            )}
+            {CONV_STATUSES.map((item) => (
+              <option key={item.value} value={item.value}>{item.label}</option>
+            ))}
+          </select>
+        )}
+        <button className="btn-ghost h-8 shrink-0 px-2" disabled={!messages.length || exporting}
           title={exporting ? 'Đang xuất Excel' : 'Xuất toàn bộ hội thoại'} aria-label="Xuất Excel" onClick={exportTranscript}>
           <Download className="h-4 w-4" aria-hidden /> <span className="hidden 2xl:inline">Xuất Excel</span>
         </button>
-        <button onClick={onClose} className="hidden rounded-lg p-2 hover:bg-sunken lg:block" aria-label="Đóng">
+        <button onClick={onClose} className="hidden rounded-lg p-1.5 hover:bg-sunken lg:block" aria-label="Đóng">
           <X className="h-4 w-4" aria-hidden />
         </button>
       </header>
-      <div ref={scroll} className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain bg-sunken/40 px-4 py-5 [overflow-anchor:none] sm:px-5">
+      <div ref={scroll} className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain bg-sunken/40 px-4 py-3.5 [overflow-anchor:none] sm:px-5">
         {msgs.error && !messages.length ? (
           <ErrorBox message={msgs.error} onRetry={msgs.reload} />
         ) : !msgs.data && !messages.length ? (
@@ -339,7 +391,7 @@ function Transcript({ id, nameOf, onClose, onUpdated }: {
           {(beforeId || olderError) && (
             <div className="space-y-2 text-center">
               {olderError && <p role="alert" className="text-sm text-danger">{olderError}</p>}
-              <button type="button" className="btn-ghost" onClick={loadOlder} disabled={loadingOlder || msgs.loading}>
+              <button type="button" className="btn-ghost h-8 text-xs" onClick={loadOlder} disabled={loadingOlder || msgs.loading}>
                 {loadingOlder ? 'Đang tải tin cũ…' : 'Tải thêm tin cũ'}
               </button>
             </div>
@@ -348,7 +400,7 @@ function Transcript({ id, nameOf, onClose, onUpdated }: {
             const mine = m.sender === 'user'
             return (
               <div key={m.id} className={`flex flex-col ${mine ? 'items-start' : 'items-end'}`}>
-                <div className={`max-w-[88%] whitespace-pre-wrap rounded-2xl px-4 py-3 text-sm leading-relaxed [overflow-wrap:anywhere] ${
+                <div className={`max-w-[85%] whitespace-pre-wrap rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed [overflow-wrap:anywhere] ${
                   mine ? 'rounded-bl-md border border-line bg-surface'
                     : m.sender === 'assistant' ? 'rounded-br-md border border-accent/25 bg-accent-soft'
                     : 'rounded-br-md border border-ok/30 bg-ok/10'
@@ -358,7 +410,7 @@ function Transcript({ id, nameOf, onClose, onUpdated }: {
                     : !m.content && <em className="text-muted">[không có nội dung văn bản]</em>}
                   {m.sender === 'assistant' && <MessageSources citations={m.metadata?.citations} />}
                 </div>
-                <span className="mt-1 px-1 text-[11px] text-muted">{SENDER[m.sender] || m.sender} · {fmtTime(m.created_at)}</span>
+                <span className="mt-0.5 px-1 text-[11px] text-muted">{SENDER[m.sender] || m.sender} · {fmtTime(m.created_at)}</span>
               </div>
             )
           })}
@@ -367,30 +419,29 @@ function Transcript({ id, nameOf, onClose, onUpdated }: {
         )}
       </div>
       {c && (c.status !== 'closed' || notice || actionError) && (
-        <footer className="shrink-0 space-y-2 border-t border-line p-3 sm:px-4">
-          {actionError && <p role="alert" className="text-sm text-danger">{actionError}</p>}
-          {notice && <p role="status" className="text-sm text-ok">{notice}</p>}
+        <footer className="shrink-0 space-y-1.5 border-t border-line px-3 py-2.5 sm:px-4">
+          {actionError && <p role="alert" className="text-xs text-danger">{actionError}</p>}
+          {notice && <p role="status" className="text-xs text-ok">{notice}</p>}
           {c.status !== 'closed' && (
-            <form className="space-y-2" onSubmit={sendReply}>
+            <form className="flex flex-col gap-2 sm:flex-row sm:items-end" onSubmit={sendReply}>
               {canReply ? (
-                <div>
-                  <label htmlFor="officer-reply" className="label">{isWeb ? 'Trả lời trên widget web' : 'Trả lời qua Zalo'}</label>
-                  <textarea id="officer-reply" rows={2} maxLength={4000}
-                    className="field !h-auto !min-h-0 !max-h-32 resize-y py-2" value={draft}
-                    onChange={(event) => setDraft(event.target.value)} disabled={!!pending}
-                    placeholder="Nhập nội dung gửi cho người dân..." />
-                </div>
+                <textarea id="officer-reply" rows={1} maxLength={4000}
+                  aria-label={isWeb ? 'Trả lời trên widget web' : 'Trả lời qua Zalo'}
+                  className="field min-w-0 flex-1 !h-auto !min-h-[38px] !max-h-28 resize-none py-2 leading-snug" value={draft}
+                  onChange={(event) => setDraft(event.target.value)} onKeyDown={onDraftKeyDown} disabled={!!pending}
+                  placeholder={isWeb ? 'Trả lời trên widget web… (Ctrl+Enter để gửi)' : 'Trả lời qua Zalo… (Ctrl+Enter để gửi)'} />
               ) : (
-                <p className="text-sm text-muted">{isWeb ? 'Phiên web chưa đăng ký nhận phản hồi. Người dân có thể mở lại widget và bấm Cần cán bộ hỗ trợ.' : 'Chưa có kênh trả lời cho hội thoại này.'}</p>
+                <p className="min-w-0 flex-1 text-xs text-muted">{isWeb ? 'Phiên web chưa đăng ký nhận phản hồi. Người dân có thể mở lại widget và bấm Cần cán bộ hỗ trợ.' : 'Chưa có kênh trả lời cho hội thoại này.'}</p>
               )}
-              <div className="flex flex-wrap justify-end gap-2">
-                <button type="button" className="btn-ghost" onClick={() => void handleAction('close')}
+              <div className="flex shrink-0 items-center justify-end gap-1.5">
+                <button type="button" className="btn-ghost h-[38px] px-3 text-xs sm:text-sm" onClick={() => void handleAction('close')}
                   disabled={!!pending || conv.loading || !!draft.trim()}>
-                  {pending === 'close' ? 'Đang đóng...' : 'Đóng hội thoại'}
+                  {pending === 'close' ? 'Đang đóng…' : 'Đóng'}
                 </button>
                 {canReply && (
-                  <button type="submit" className="btn-primary" disabled={!!pending || conv.loading || !draft.trim()}>
-                    {pending === 'reply' ? 'Đang gửi...' : isWeb ? 'Gửi lên widget' : 'Gửi qua Zalo'}
+                  <button type="submit" className="btn-primary h-[38px] px-3.5 text-xs sm:text-sm" disabled={!!pending || conv.loading || !draft.trim()}>
+                    <Send className="h-3.5 w-3.5" aria-hidden />
+                    {pending === 'reply' ? 'Đang gửi…' : 'Gửi'}
                   </button>
                 )}
               </div>
@@ -405,11 +456,18 @@ function Transcript({ id, nameOf, onClose, onUpdated }: {
 export default function Conversations() {
   const [sp, setSp] = useSearchParams()
   const source = sp.get('source') || ''
-  const queue = sp.get('status') === 'needs_human'
+  const status = sp.get('status') || ''
+  const queue = status === 'needs_human'
+  const q = sp.get('q') || ''
   const from = sp.get('from') || ''
   const to = sp.get('to') || ''
   const page = Math.max(0, Number(sp.get('page')) || 0)
   const openId = Number(sp.get('id')) || 0
+  const [searchInput, setSearchInput] = useState(q)
+
+  useEffect(() => {
+    setSearchInput(q)
+  }, [q])
 
   const set = (patch: Record<string, string | number>) => {
     const next = new URLSearchParams(sp)
@@ -419,17 +477,30 @@ export default function Conversations() {
     setSp(next, { replace: 'id' in patch })
   }
 
+  useEffect(() => {
+    const trimmed = searchInput.trim()
+    if (trimmed === q) return
+    const timer = window.setTimeout(() => set({ q: trimmed }), 300)
+    return () => window.clearTimeout(timer)
+  }, [searchInput, q])
+
   const srcs = useAsync(api.sources, [])
-  const listKey = JSON.stringify([source, queue, from, to, page])
+  const webSources = useMemo(() => srcs.data?.filter((s) => s.kind === 'web') ?? [], [srcs.data])
+  const zaloSources = useMemo(() => srcs.data?.filter((s) => s.kind === 'zalo') ?? [], [srcs.data])
+  const sourceLabel = (item: Source, group: Source[]) => {
+    const dup = group.some((other) => other.source !== item.source && other.name === item.name)
+    return dup ? `${item.name} (${item.source.replace(/^(web|zalo):/, '')})` : item.name
+  }
+  const listKey = JSON.stringify([source, status, q, from, to, page])
   const list = useAsync(
-    async () => ({ key: listKey, ...await api.conversations({ source, status: queue ? 'needs_human' : '', date_from: toTs(from), date_to: toTs(to, true), offset: page * LIMIT, limit: LIMIT }) }),
+    async () => ({ key: listKey, ...await api.conversations({ source, status, q, date_from: toTs(from), date_to: toTs(to, true), offset: page * LIMIT, limit: LIMIT }) }),
     [listKey],
   )
   const currentList = list.data?.key === listKey ? list.data : undefined
   const nameOf = (k: string) => srcs.data?.find((s) => s.source === k)?.name || k.replace(/^web:/, '')
   const total = currentList?.total || 0
   const pages = Math.max(1, Math.ceil(total / LIMIT))
-  const listBox = useFitHeight()
+  const listBox = useFitHeight(queue)
   useEffect(() => {
     if (!list.loading && currentList && page >= pages) set({ page: pages - 1 })
   }, [list.loading, currentList, page, pages])
@@ -443,69 +514,96 @@ export default function Conversations() {
       'Danh sach', `hoi-thoai-trang-${page + 1}.xlsx`)
 
   return (
-    <>
+    <div className="lg:-my-4">
       <div className={openId > 0 ? 'hidden lg:block' : undefined}>
-      <PageHeader
-        title="Hội thoại"
-        desc="Lịch sử hỏi đáp của người dân, lọc theo nguồn và thời gian."
-        actions={
-          <button className="btn-ghost" onClick={exportPage} disabled={list.loading || !currentList?.conversations.length}>
-            <Download className="h-4 w-4" aria-hidden /> Xuất trang này
-          </button>
-        }
-      />
-
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <div role="group" aria-label="Chế độ xem hội thoại" className="flex gap-1 rounded-lg bg-sunken p-1">
+      <header className="mb-2.5 flex flex-wrap items-center gap-x-3 gap-y-2">
+        <h1 className="text-xl font-semibold tracking-tight">Hội thoại</h1>
+        <div role="group" aria-label="Chế độ xem hội thoại" className="flex gap-0.5 rounded-lg bg-sunken p-0.5">
           {[{ value: '', label: 'Tất cả' }, { value: 'needs_human', label: 'Cần xử lý' }].map(({ value, label }) => {
             const active = queue === !!value
             return (
               <button key={value} type="button" aria-pressed={active} onClick={() => set({ status: value, page: 0, id: 0 })}
-                className={`rounded-md px-3 py-2 text-sm font-medium ${active ? 'bg-surface text-accent shadow-card' : 'text-muted hover:text-ink'}`}>
+                className={`rounded-md px-2.5 py-1.5 text-xs font-medium sm:text-sm ${active ? 'bg-surface text-accent shadow-card' : 'text-muted hover:text-ink'}`}>
                 {label}
               </button>
             )
           })}
         </div>
-        {queue && <span className="text-sm text-muted">Chờ lâu nhất trước</span>}
-        <button type="button" className="btn-ghost ml-auto" onClick={list.reload} disabled={list.loading}>Làm mới</button>
+        {queue && <span className="text-xs text-muted">Chờ lâu nhất trước</span>}
+        <div className="ml-auto flex items-center gap-2">
+          <button type="button" className="btn-ghost h-9 px-3 text-xs sm:text-sm" onClick={list.reload} disabled={list.loading}>
+            <RefreshCw className={`h-3.5 w-3.5 ${list.loading ? 'animate-spin' : ''}`} aria-hidden /> Làm mới
+          </button>
+          <button className="btn-ghost h-9 px-3 text-xs sm:text-sm" onClick={exportPage} disabled={list.loading || !currentList?.conversations.length}>
+            <Download className="h-3.5 w-3.5" aria-hidden /> Xuất trang này
+          </button>
+        </div>
+      </header>
+
+      <div className="card mb-3 flex flex-wrap items-center gap-2 px-3 py-2">
+        <div className="relative min-w-[200px] flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" aria-hidden />
+          <input
+            id="f-q"
+            type="search"
+            aria-label="Tìm kiếm hội thoại"
+            className="field h-9 pl-9 pr-8"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') set({ q: searchInput.trim() })
+            }}
+            placeholder="Tìm nội dung, người dân, SĐT…"
+          />
+          {searchInput && (
+            <button
+              type="button"
+              onClick={() => { setSearchInput(''); set({ q: '' }) }}
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted hover:bg-sunken hover:text-ink"
+              aria-label="Xóa từ khóa tìm kiếm"
+            >
+              <X className="h-3.5 w-3.5" aria-hidden />
+            </button>
+          )}
+        </div>
+        <select id="f-src" aria-label="Nguồn" className="field h-9 w-full sm:w-[210px]" value={source} onChange={(e) => set({ source: e.target.value })}>
+          <option value="">Tất cả nguồn</option>
+          {(webSources.length > 0 || source === 'web') && (
+            <optgroup label="Cổng web">
+              {(webSources.length > 1 || source === 'web') && <option value="web">Tất cả cổng web</option>}
+              {webSources.map((s) => <option key={s.source} value={s.source}>{sourceLabel(s, webSources)}</option>)}
+            </optgroup>
+          )}
+          {(zaloSources.length > 0 || source === 'zalo') && (
+            <optgroup label="Zalo OA">
+              {(zaloSources.length > 1 || source === 'zalo') && <option value="zalo">Tất cả Zalo OA</option>}
+              {zaloSources.map((s) => <option key={s.source} value={s.source}>{sourceLabel(s, zaloSources)}</option>)}
+            </optgroup>
+          )}
+          {source && source !== 'web' && source !== 'zalo' && !srcs.data?.some((s) => s.source === source) && (
+            <option value={source}>{nameOf(source)}</option>
+          )}
+        </select>
+        <select id="f-status" aria-label="Trạng thái" className="field h-9 w-full sm:w-[155px]" value={status} onChange={(e) => set({ status: e.target.value })}>
+          <option value="">Tất cả trạng thái</option>
+          <option value="active">Đang mở</option>
+          <option value="needs_human">Cần cán bộ</option>
+          <option value="replied">Đã trả lời</option>
+          <option value="closed">Đã đóng</option>
+        </select>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-xs text-muted">Từ</span>
+          <input id="f-from" aria-label="Từ ngày" type="date" className="field h-9 w-[138px] px-2.5" value={from} max={to || undefined} onChange={(e) => set({ from: e.target.value })} />
+          <span className="text-xs text-muted">đến</span>
+          <input id="f-to" aria-label="Đến ngày" type="date" className="field h-9 w-[138px] px-2.5" value={to} min={from || undefined} onChange={(e) => set({ to: e.target.value })} />
+        </div>
+        {(q || source || status || from || to) && (
+          <button type="button" className="btn-ghost h-9 px-3 text-xs sm:text-sm" onClick={() => { setSearchInput(''); set({ q: '', source: '', status: '', from: '', to: '', page: 0, id: 0 }) }}>Xóa lọc</button>
+        )}
+      </div>
       </div>
 
-      <div className="card mb-4 grid gap-3 p-4 sm:grid-cols-[minmax(0,1fr)_170px_170px_auto] sm:items-end">
-        <div>
-          <label htmlFor="f-src" className="label">Nguồn</label>
-          <select id="f-src" className="field" value={source} onChange={(e) => set({ source: e.target.value })}>
-            <option value="">Tất cả nguồn</option>
-            <option value="web">Tất cả cổng web</option>
-            <option value="zalo">Tất cả Zalo OA</option>
-            {srcs.data?.some((s) => s.kind === 'web') && (
-              <optgroup label="Cổng web">
-                {srcs.data.filter((s) => s.kind === 'web').map((s) => <option key={s.source} value={s.source}>{s.name}</option>)}
-              </optgroup>
-            )}
-            {srcs.data?.some((s) => s.kind === 'zalo') && (
-              <optgroup label="Zalo OA">
-                {srcs.data.filter((s) => s.kind === 'zalo').map((s) => <option key={s.source} value={s.source}>{s.name}</option>)}
-              </optgroup>
-            )}
-            {source && !['web', 'zalo'].includes(source) && srcs.data && !srcs.data.some((s) => s.source === source) && (
-              <option value={source}>{nameOf(source)}</option>
-            )}
-          </select>
-        </div>
-        <div>
-          <label htmlFor="f-from" className="label">Từ ngày</label>
-          <input id="f-from" type="date" className="field" value={from} max={to || undefined} onChange={(e) => set({ from: e.target.value })} />
-        </div>
-        <div>
-          <label htmlFor="f-to" className="label">Đến ngày</label>
-          <input id="f-to" type="date" className="field" value={to} min={from || undefined} onChange={(e) => set({ to: e.target.value })} />
-        </div>
-        <button className="btn-ghost" disabled={!source && !from && !to} onClick={() => set({ source: '', from: '', to: '', page: 0, id: 0 })}>Xóa lọc</button>
-      </div>
-      </div>
-
-      <div className={`grid gap-4 ${openId ? 'lg:grid-cols-[minmax(280px,360px)_minmax(0,1fr)] xl:grid-cols-[400px_minmax(0,1fr)]' : ''}`}>
+      <div className={`grid gap-3 ${openId ? 'lg:grid-cols-[minmax(270px,330px)_minmax(0,1fr)] xl:grid-cols-[360px_minmax(0,1fr)]' : ''}`}>
         <section ref={listBox} className={`card flex-col overflow-hidden ${openId ? 'hidden lg:flex' : 'flex'}`} aria-label="Danh sách hội thoại">
           <div className="flex shrink-0 items-center justify-between border-b border-line px-4 py-3 text-sm text-muted" aria-live="polite">
             <span>{currentList ? <><span className="num font-medium text-ink">{total.toLocaleString('vi-VN')}</span> hội thoại</> : !list.error && 'Đang tải...'}</span>
@@ -518,7 +616,7 @@ export default function Conversations() {
             <div className="space-y-3 p-4">{[0, 1, 2, 3, 4].map((i) => <div key={i} className="skeleton h-12" />)}</div>
           ) : !currentList.conversations.length ? (
             <Empty title={queue ? 'Không có hội thoại cần xử lý' : 'Không có hội thoại phù hợp'}
-              hint={source || from || to ? 'Thử bỏ bớt bộ lọc hoặc chọn khoảng thời gian rộng hơn.' : undefined} />
+              hint={q || source || status || from || to ? 'Thử bỏ bớt bộ lọc hoặc chọn khoảng thời gian rộng hơn.' : undefined} />
           ) : (
             <ul className={`divide-y divide-line ${list.loading ? 'opacity-60' : ''}`}>
               {currentList.conversations.map((c) => {
@@ -553,6 +651,6 @@ export default function Conversations() {
 
         {openId > 0 && <Transcript key={openId} id={openId} nameOf={nameOf} onClose={() => set({ id: 0 })} onUpdated={list.reload} />}
       </div>
-    </>
+    </div>
   )
 }

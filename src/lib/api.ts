@@ -299,7 +299,7 @@ export const api = {
   sources: () => request<{ sources: Source[] }>('/sources').then((r) => r.sources),
   daily: (days: number, source = '') =>
     request<{ series: DailyPoint[] }>(`/stats/daily${qs({ days, source })}`).then((r) => r.series),
-  conversations: (p: { source?: string; status?: string; date_from?: number; date_to?: number; offset?: number; limit?: number }) =>
+  conversations: (p: { source?: string; status?: string; q?: string; date_from?: number; date_to?: number; offset?: number; limit?: number }) =>
     request<{ conversations: Conversation[]; total: number }>(`/conversations${qs(p)}`),
   conversation: (id: number) => request<Conversation>(`/conversations/${id}`),
   recentMessages: (id: number, beforeId?: number, limit = 50) =>
@@ -311,6 +311,10 @@ export const api = {
   replyToConversation: (id: number, message: string, requestId?: string) =>
     request<{ ok: boolean; message_id?: string | number }>(`/conversations/${id}/reply`, {
       method: 'POST', body: JSON.stringify({ message, request_id: requestId }),
+    }),
+  setConversationStatus: (id: number, status: 'active' | 'needs_human' | 'replied' | 'closed') =>
+    request<{ ok: boolean; status: string }>(`/conversations/${id}/status`, {
+      method: 'POST', body: JSON.stringify({ status }),
     }),
   closeConversation: (id: number) =>
     request<{ ok: boolean; status: string }>(`/conversations/${id}/status`, {
