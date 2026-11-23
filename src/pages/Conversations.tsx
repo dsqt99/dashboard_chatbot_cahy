@@ -170,9 +170,10 @@ function newReplyId() {
   return Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('')
 }
 
-function Transcript({ id, nameOf, onClose, onUpdated }: {
+function Transcript({ id, nameOf, refreshKey, onClose, onUpdated }: {
   id: number
   nameOf: (k: string) => string
+  refreshKey: number
   onClose: () => void
   onUpdated: () => void
 }) {
@@ -274,18 +275,28 @@ function Transcript({ id, nameOf, onClose, onUpdated }: {
       }
     }
 
-    const onVisibility = () => {
+    const onResume = () => {
       window.clearTimeout(timer)
       if (!document.hidden) void poll()
     }
     timer = window.setTimeout(poll, 4000)
-    document.addEventListener('visibilitychange', onVisibility)
+    document.addEventListener('visibilitychange', onResume)
+    window.addEventListener('focus', onResume)
     return () => {
       alive = false
       window.clearTimeout(timer)
-      document.removeEventListener('visibilitychange', onVisibility)
+      document.removeEventListener('visibilitychange', onResume)
+      window.removeEventListener('focus', onResume)
     }
   }, [id, liveActive])
+
+  const initialRefreshRef = useRef(refreshKey)
+  useEffect(() => {
+    if (refreshKey === initialRefreshRef.current) return
+    initialRefreshRef.current = refreshKey
+    conv.reload()
+    msgs.reload()
+  }, [refreshKey, conv.reload, msgs.reload])
 
   const loadOlder = async () => {
     if (!beforeId || loadingOlder) return
@@ -554,6 +565,7 @@ export default function Conversations() {
   const page = Math.max(0, Number(sp.get('page')) || 0)
   const openId = Number(sp.get('id')) || 0
   const [searchInput, setSearchInput] = useState(q)
+  const [refreshKey, setRefreshKey] = useState(0)
 
   useEffect(() => {
     setSearchInput(q)
@@ -621,7 +633,7 @@ export default function Conversations() {
         </div>
         {queue && <span className="text-xs text-muted">Chờ lâu nhất trước</span>}
         <div className="ml-auto flex items-center gap-2">
-          <button type="button" className="btn-ghost h-9 px-3 text-xs sm:text-sm" onClick={list.reload} disabled={list.loading}>
+          <button type="button" className="btn-ghost h-9 px-3 text-xs sm:text-sm" onClick={() => { list.reload(); setRefreshKey((k) => k + 1) }} disabled={list.loading}>
             <RefreshCw className={`h-3.5 w-3.5 ${list.loading ? 'animate-spin' : ''}`} aria-hidden /> Làm mới
           </button>
           <button className="btn-ghost h-9 px-3 text-xs sm:text-sm" onClick={exportPage} disabled={list.loading || !currentList?.conversations.length}>
@@ -739,7 +751,7 @@ export default function Conversations() {
           {pages > 1 && <Pager page={page} pages={pages} onGo={(p) => set({ page: p })} />}
         </section>
 
-        {openId > 0 && <Transcript key={openId} id={openId} nameOf={nameOf} onClose={() => set({ id: 0 })} onUpdated={list.reload} />}
+        {openId > 0 && <Transcript key={openId} id={openId} nameOf={nameOf} refreshKey={refreshKey} onClose={() => set({ id: 0 })} onUpdated={list.reload} />}
       </div>
     </div>
   )
