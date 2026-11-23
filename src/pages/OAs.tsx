@@ -9,8 +9,8 @@ import {
   Settings2,
   Trash2,
 } from 'lucide-react'
-import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import Modal from '../components/Modal'
 import { CopyField, DeptError, DeptOptions, Empty, ErrorBox, OrphanDept, PageHeader, fmtAgo, fmtNum, fmtTime } from '../components/ui'
 import { ChannelTabs, SourceStats } from './Portals'
@@ -24,6 +24,18 @@ export default function OAs() {
   const sources = useAsync(api.sources, [])
 
   const [err, setErr] = useState('')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [oauthNotice, setOauthNotice] = useState<'success' | 'error' | null>(null)
+
+  useEffect(() => {
+    const oauth = searchParams.get('oauth')
+    if (oauth === 'success' || oauth === 'error') {
+      setOauthNotice(oauth)
+      const next = new URLSearchParams(searchParams)
+      next.delete('oauth')
+      setSearchParams(next, { replace: true })
+    }
+  }, [searchParams, setSearchParams])
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<OA | null>(null)
   const [detailOA, setDetailOA] = useState<OA | null>(null)
@@ -177,7 +189,7 @@ export default function OAs() {
     setErr('')
     try {
       const { oauth_url } = await api.oauthUrl(detailOA.oa_id)
-      window.open(oauth_url, '_blank', 'noopener,noreferrer')
+      window.location.assign(oauth_url)
     } catch (ex) {
       setErr(ex instanceof Error ? ex.message : 'Không lấy được link OAuth Zalo')
     }
@@ -208,6 +220,19 @@ export default function OAs() {
       />
 
       <ChannelTabs />
+
+      {oauthNotice === 'success' && (
+        <div role="status" className="mb-4 flex items-center justify-between rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-400">
+          <span>Kết nối OAuth Zalo OA thành công.</span>
+          <button type="button" onClick={() => setOauthNotice(null)} className="ml-4 text-xs underline opacity-80 hover:opacity-100">Đóng</button>
+        </div>
+      )}
+      {oauthNotice === 'error' && (
+        <div role="alert" className="mb-4 flex items-center justify-between rounded-lg border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
+          <span>Kết nối OAuth Zalo OA thất bại. Vui lòng kiểm tra App ID, App Secret và thử lại.</span>
+          <button type="button" onClick={() => setOauthNotice(null)} className="ml-4 text-xs underline opacity-80 hover:opacity-100">Đóng</button>
+        </div>
+      )}
 
       {err && !formOpen && !detailOA && (
         <div role="alert" className="mb-4 rounded-lg border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">

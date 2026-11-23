@@ -4,9 +4,12 @@
 const TOKEN_KEY = 'cahy_dashboard_token'
 
 export const auth = {
-  get: () => sessionStorage.getItem(TOKEN_KEY) || '',
-  set: (t: string) => sessionStorage.setItem(TOKEN_KEY, t),
-  clear: () => sessionStorage.removeItem(TOKEN_KEY),
+  get: () => localStorage.getItem(TOKEN_KEY) || sessionStorage.getItem(TOKEN_KEY) || '',
+  set: (t: string) => localStorage.setItem(TOKEN_KEY, t),
+  clear: () => {
+    localStorage.removeItem(TOKEN_KEY)
+    sessionStorage.removeItem(TOKEN_KEY)
+  },
 }
 
 export class ApiError extends Error {
