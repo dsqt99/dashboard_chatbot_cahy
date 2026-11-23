@@ -1,4 +1,4 @@
-import { ArrowLeft, ChevronLeft, ChevronRight, Download, RefreshCw, Search, Send, X } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, Download, Loader2, RefreshCw, Search, Send, Sparkles, X } from 'lucide-react'
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Empty, ErrorBox, SourceBadge, StatusPill, TOPICS, TOPIC_LABEL, TopicBadge, fmtAgo, fmtTime, sourceOf } from '../components/ui'
@@ -568,6 +568,9 @@ export default function Conversations() {
   const openId = Number(sp.get('id')) || 0
   const [searchInput, setSearchInput] = useState(q)
   const [refreshKey, setRefreshKey] = useState(0)
+  const [classifying, setClassifying] = useState(false)
+  const [classifyNotice, setClassifyNotice] = useState('')
+  const [classifyError, setClassifyError] = useState('')
 
   useEffect(() => {
     setSearchInput(q)
@@ -589,6 +592,8 @@ export default function Conversations() {
   }, [searchInput, q])
 
   const srcs = useAsync(api.sources, [])
+  const topicStats = useAsync(() => api.topics(0), [])
+  const unclassifiedCount = topicStats.data?.unclassified ?? 0
   const webSources = useMemo(() => srcs.data?.filter((s) => s.kind === 'web') ?? [], [srcs.data])
   const zaloSources = useMemo(() => srcs.data?.filter((s) => s.kind === 'zalo') ?? [], [srcs.data])
   const sourceLabel = (item: Source, group: Source[]) => {
@@ -600,6 +605,45 @@ export default function Conversations() {
     async () => ({ key: listKey, ...await api.conversations({ source, status, topic, q, date_from: toTs(from), date_to: toTs(to, true), offset: page * LIMIT, limit: LIMIT }) }),
     [listKey],
   )
+
+  const runClassify = async () => {
+    if (classifying) return
+    setClassifying(true)
+    setClassifyError('')
+    setClassifyNotice('')
+    let totalProcessed = 0
+    try {
+      while (true) {
+        const res = await api.classifyTopics(50)
+        totalProcessed += res.processed
+        if (res.remaining > 0 && res.processed > 0) {
+          setClassifyNotice(`Đang phân loại… đã xong ${totalProcessed.toLocaleString('vi-VN')} (còn ${res.remaining.toLocaleString('vi-VN')}).`)
+          topicStats.reload()
+          continue
+        }
+        setClassifyNotice(
+          totalProcessed
+            ? `Đã phân loại ${totalProcessed.toLocaleString('vi-VN')} hội thoại${res.remaining ? ` (còn ${res.remaining.toLocaleString('vi-VN')} chưa phân loại)` : ''}.`
+            : 'Tất cả hội thoại đã được phân loại.',
+        )
+        break
+      }
+      topicStats.reload()
+      list.reload()
+      setRefreshKey((k) => k + 1)
+    } catch (e) {
+      setClassifyError(
+        (totalProcessed ? `Đã phân loại ${totalProcessed.toLocaleString('vi-VN')} hội thoại thì gặp lỗi: ` : '')
+        + (e instanceof Error ? e.message : 'Không phân loại được hội thoại.'),
+      )
+      if (totalProcessed) {
+        topicStats.reload()
+        list.reload()
+      }
+    } finally {
+      setClassifying(false)
+    }
+  }
   const currentList = list.data?.key === listKey ? list.data : undefined
   const nameOf = (k: string) => srcs.data?.find((s) => s.source === k)?.name || k.replace(/^web:/, '')
   const total = currentList?.total || 0
@@ -635,8 +679,20 @@ export default function Conversations() {
           })}
         </div>
         {queue && <span className="text-xs text-muted">Chờ lâu nhất trước</span>}
-        <div className="ml-auto flex items-center gap-2">
-          <button type="button" className="btn-ghost h-9 px-3 text-xs sm:text-sm" onClick={() => { list.reload(); setRefreshKey((k) => k + 1) }} disabled={list.loading}>
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          {(unclassifiedCount > 0 || classifying) && (
+            <button
+              type="button"
+              className="btn-ghost h-9 px-3 text-xs sm:text-sm"
+              onClick={() => void runClassify()}
+              disabled={classifying}
+              title="Phân loại chủ đề cho các hội thoại chưa phân loại"
+            >
+              {classifying ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <Sparkles className="h-3.5 w-3.5 text-accent" aria-hidden />}
+              {classifying ? 'Đang phân loại…' : `Phân loại (${unclassifiedCount.toLocaleString('vi-VN')})`}
+            </button>
+          )}
+          <button type="button" className="btn-ghost h-9 px-3 text-xs sm:text-sm" onClick={() => { list.reload(); topicStats.reload(); setRefreshKey((k) => k + 1) }} disabled={list.loading}>
             <RefreshCw className={`h-3.5 w-3.5 ${list.loading ? 'animate-spin' : ''}`} aria-hidden /> Làm mới
           </button>
           <button className="btn-ghost h-9 px-3 text-xs sm:text-sm" onClick={exportPage} disabled={list.loading || !currentList?.conversations.length}>
@@ -644,6 +700,8 @@ export default function Conversations() {
           </button>
         </div>
       </header>
+      {classifyError && <p role="alert" className="mb-2 text-xs text-danger">{classifyError}</p>}
+      {classifyNotice && <p role="status" className="mb-2 text-xs text-ok">{classifyNotice}</p>}
 
       <div className="card mb-3 flex flex-wrap items-center gap-2 px-3 py-2">
         <div className="relative min-w-[200px] flex-1">

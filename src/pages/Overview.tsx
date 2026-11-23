@@ -239,7 +239,7 @@ function TopicBreakdown({
                 disabled={classifying}
               >
                 {classifying ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <Sparkles className="h-3.5 w-3.5 text-accent" aria-hidden />}
-                {classifying ? 'Đang phân loại…' : `Phân loại ${Math.min(50, data.unclassified)} hội thoại cũ`}
+                {classifying ? 'Đang phân loại…' : 'Phân loại hội thoại chưa phân loại'}
               </button>
             )}
           </div>
@@ -266,17 +266,34 @@ export default function Overview() {
     setClassifying(true)
     setClassifyError('')
     setClassifyNotice('')
+    let totalProcessed = 0
     try {
-      const res = await api.classifyTopics(50)
-      setClassifyNotice(
-        res.processed
-          ? `Đã phân loại ${fmtNum(res.processed)} hội thoại${res.remaining ? ` (còn ${fmtNum(res.remaining)} chưa phân loại)` : ''}.`
-          : 'Tất cả hội thoại đã được phân loại.',
-      )
+      while (true) {
+        const res = await api.classifyTopics(50)
+        totalProcessed += res.processed
+        if (res.remaining > 0 && res.processed > 0) {
+          setClassifyNotice(`Đang phân loại… đã xong ${fmtNum(totalProcessed)} (còn ${fmtNum(res.remaining)}).`)
+          topics.reload()
+          continue
+        }
+        setClassifyNotice(
+          totalProcessed
+            ? `Đã phân loại ${fmtNum(totalProcessed)} hội thoại${res.remaining ? ` (còn ${fmtNum(res.remaining)} chưa phân loại)` : ''}.`
+            : 'Tất cả hội thoại đã được phân loại.',
+        )
+        break
+      }
       topics.reload()
       recent.reload()
     } catch (e) {
-      setClassifyError(e instanceof Error ? e.message : 'Không phân loại được hội thoại.')
+      setClassifyError(
+        (totalProcessed ? `Đã phân loại ${fmtNum(totalProcessed)} hội thoại thì gặp lỗi: ` : '')
+        + (e instanceof Error ? e.message : 'Không phân loại được hội thoại.'),
+      )
+      if (totalProcessed) {
+        topics.reload()
+        recent.reload()
+      }
     } finally {
       setClassifying(false)
     }
