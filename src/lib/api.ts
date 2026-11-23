@@ -219,6 +219,7 @@ export interface Conversation {
   oa_id: string
   message_count: number
   status: string
+  topic?: string
   handoff_since?: number
   web_reply_available?: boolean
   started_at: number
@@ -246,6 +247,18 @@ export interface DailyPoint {
   day: string
   kind: 'web' | 'zalo'
   count: number
+}
+
+export interface TopicStat {
+  slug: string
+  label: string
+  count: number
+}
+
+export interface TopicStatsResponse {
+  topics: TopicStat[]
+  unclassified: number
+  total: number
 }
 
 export interface Doc {
@@ -277,7 +290,14 @@ export const api = {
   sources: () => request<{ sources: Source[] }>('/sources').then((r) => r.sources),
   daily: (days: number, source = '') =>
     request<{ series: DailyPoint[] }>(`/stats/daily${qs({ days, source })}`).then((r) => r.series),
-  conversations: (p: { source?: string; status?: string; q?: string; date_from?: number; date_to?: number; offset?: number; limit?: number }) =>
+  topics: (days = 0) =>
+    request<TopicStatsResponse>(`/stats/topics${qs({ days })}`),
+  classifyTopics: (limit = 50) =>
+    request<{ processed: number; remaining: number }>('/stats/topics/classify', {
+      method: 'POST',
+      body: JSON.stringify({ limit }),
+    }),
+  conversations: (p: { source?: string; status?: string; topic?: string; q?: string; date_from?: number; date_to?: number; offset?: number; limit?: number }) =>
     request<{ conversations: Conversation[]; total: number }>(`/conversations${qs(p)}`),
   conversation: (id: number) => request<Conversation>(`/conversations/${id}`),
   recentMessages: (id: number, beforeId?: number, limit = 50) =>

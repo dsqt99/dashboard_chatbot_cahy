@@ -1,4 +1,4 @@
-import { AlertTriangle, Check, Copy, Globe, Inbox, MessageCircle, RotateCw } from 'lucide-react'
+import { AlertTriangle, Check, Copy, Globe, Inbox, MessageCircle, RotateCw, Tag } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 
 const nf = new Intl.NumberFormat('vi-VN')
@@ -44,6 +44,33 @@ const STATUS: Record<string, { label: string; cls: string }> = {
   needs_human: { label: 'Cần cán bộ', cls: 'text-warn bg-warn/10' },
   replied: { label: 'Đã trả lời', cls: 'text-ok bg-ok/10' },
   closed: { label: 'Đã đóng', cls: 'text-muted bg-sunken' },
+}
+
+export const TOPICS = [
+  { slug: 'can_cuoc_dinh_danh', label: 'Căn cước & Định danh (VNeID)', bar: 'bg-blue-600 dark:bg-blue-400' },
+  { slug: 'cu_tru', label: 'Cư trú (Thường trú, Tạm trú)', bar: 'bg-teal-600 dark:bg-teal-400' },
+  { slug: 'dang_ky_xe_giao_thong', label: 'Đăng ký xe & Giao thông', bar: 'bg-amber-600 dark:bg-amber-400' },
+  { slug: 'xuat_nhap_canh', label: 'Xuất nhập cảnh & Hộ chiếu', bar: 'bg-indigo-600 dark:bg-indigo-400' },
+  { slug: 'pccc_cnch', label: 'PCCC & Cứu nạn cứu hộ', bar: 'bg-rose-600 dark:bg-rose-400' },
+  { slug: 'ly_lich_tu_phap', label: 'Lý lịch tư pháp', bar: 'bg-violet-600 dark:bg-violet-400' },
+  { slug: 'antt_nganh_nghe', label: 'ANTT & Ngành nghề có điều kiện', bar: 'bg-cyan-600 dark:bg-cyan-400' },
+  { slug: 'to_giac_an_ninh', label: 'Tố giác tội phạm & An ninh mạng', bar: 'bg-red-600 dark:bg-red-400' },
+  { slug: 'dia_diem_lien_he', label: 'Địa điểm, Liên hệ & Giờ làm việc', bar: 'bg-emerald-600 dark:bg-emerald-400' },
+  { slug: 'khac', label: 'Chủ đề khác / Hỏi đáp chung', bar: 'bg-slate-500 dark:bg-slate-400' },
+] as const
+
+export const TOPIC_LABEL: Record<string, string> = Object.fromEntries(TOPICS.map((t) => [t.slug, t.label]))
+export const TOPIC_BAR: Record<string, string> = Object.fromEntries(TOPICS.map((t) => [t.slug, t.bar]))
+
+export function TopicBadge({ topic }: { topic?: string }) {
+  if (!topic) return null
+  const label = TOPIC_LABEL[topic] || topic
+  return (
+    <span className="inline-flex max-w-full items-center gap-1 rounded-md bg-sunken px-2 py-0.5 text-xs font-medium text-muted" title={label}>
+      <Tag className="h-3 w-3 shrink-0" aria-hidden />
+      <span className="truncate">{label}</span>
+    </span>
+  )
 }
 
 export function StatusPill({ status }: { status: string }) {

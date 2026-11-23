@@ -1,13 +1,13 @@
 import {
   CategoryScale, Chart as ChartJS, Filler, Legend, LinearScale, LineElement, PointElement, Tooltip,
 } from 'chart.js'
-import { ArrowRight, MessageSquare, TrendingDown, TrendingUp } from 'lucide-react'
+import { ArrowRight, Loader2, MessageSquare, Sparkles, TrendingDown, TrendingUp } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
 import { Line } from 'react-chartjs-2'
 import { Link } from 'react-router-dom'
-import { ErrorBox, Empty, PageHeader, Segmented, SourceBadge, StatusPill, fmtAgo, fmtNum, sourceOf } from '../components/ui'
+import { ErrorBox, Empty, PageHeader, Segmented, SourceBadge, StatusPill, TOPIC_BAR, TopicBadge, fmtAgo, fmtNum, sourceOf } from '../components/ui'
 import { useAsync } from '../hooks/useAsync'
-import { api, type DailyPoint, type Overview as OverviewData, type Source } from '../lib/api'
+import { api, type DailyPoint, type Overview as OverviewData, type Source, type TopicStatsResponse } from '../lib/api'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend, Filler)
 
@@ -157,12 +157,130 @@ function Channels({ sources }: { sources?: Source[] }) {
   )
 }
 
+function TopicBreakdown({
+  data,
+  onClassify,
+  classifying,
+  classifyNotice,
+  classifyError,
+}: {
+  data?: TopicStatsResponse
+  onClassify: () => void
+  classifying: boolean
+  classifyNotice: string
+  classifyError: string
+}) {
+  if (!data) {
+    return (
+      <div className="grid gap-3 px-5 pb-5 md:grid-cols-2">
+        {[0, 1, 2, 3, 4, 5].map((i) => <div key={i} className="skeleton h-10" />)}
+      </div>
+    )
+  }
+  const classified = Math.max(0, data.total - data.unclassified)
+  const max = Math.max(1, ...data.topics.map((t) => t.count))
+  const pct = (n: number) => (classified > 0 ? Math.round((n / classified) * 100) : 0)
+
+  return (
+    <div className="px-5 pb-5">
+      {classifyError && <p role="alert" className="mb-3 text-xs text-danger">{classifyError}</p>}
+      {classifyNotice && <p role="status" className="mb-3 text-xs text-ok">{classifyNotice}</p>}
+      {!data.total ? (
+        <Empty title="Chưa có hội thoại nào trong khoảng thời gian này" />
+      ) : (
+        <>
+          <div className="grid gap-x-6 gap-y-2.5 md:grid-cols-2">
+            {data.topics.map((t) => {
+              const barCls = TOPIC_BAR[t.slug] || 'bg-accent'
+              const empty = t.count === 0
+              return (
+                <Link
+                  key={t.slug}
+                  to={`/conversations?topic=${encodeURIComponent(t.slug)}`}
+                  className={`group rounded-lg px-2.5 py-2 transition-colors hover:bg-sunken ${empty ? 'opacity-55' : ''}`}
+                >
+                  <div className="flex items-center justify-between gap-3 text-sm">
+                    <span className="flex min-w-0 items-center gap-2 font-medium group-hover:text-accent">
+                      <span className={`h-2 w-2 shrink-0 rounded-full ${barCls}`} aria-hidden />
+                      <span className="truncate">{t.label}</span>
+                    </span>
+                    <span className="num shrink-0 text-xs text-muted">
+                      <span className="font-semibold text-ink">{fmtNum(t.count)}</span>
+                      {classified > 0 && ` · ${pct(t.count)}%`}
+                    </span>
+                  </div>
+                  <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-sunken">
+                    <div
+                      className={`h-full rounded-full transition-all ${barCls}`}
+                      style={{ width: t.count ? `${Math.max(3, (t.count / max) * 100)}%` : '0%' }}
+                    />
+                  </div>
+                </Link>
+              )
+            })}
+          </div>
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3 text-xs text-muted">
+            <span>
+              Đã phân loại <span className="num font-medium text-ink">{fmtNum(classified)}</span> / <span className="num font-medium text-ink">{fmtNum(data.total)}</span> hội thoại
+              {data.unclassified > 0 && (
+                <>
+                  {' · '}
+                  <Link to="/conversations?topic=__unclassified__" className="font-medium text-accent hover:underline">
+                    {fmtNum(data.unclassified)} chưa phân loại
+                  </Link>
+                </>
+              )}
+            </span>
+            {data.unclassified > 0 && (
+              <button
+                type="button"
+                className="btn-ghost h-8 px-2.5 text-xs"
+                onClick={onClassify}
+                disabled={classifying}
+              >
+                {classifying ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <Sparkles className="h-3.5 w-3.5 text-accent" aria-hidden />}
+                {classifying ? 'Đang phân loại…' : `Phân loại ${Math.min(50, data.unclassified)} hội thoại cũ`}
+              </button>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 export default function Overview() {
   const [days, setDays] = useState(14)
+  const [topicDays, setTopicDays] = useState(0)
+  const [classifying, setClassifying] = useState(false)
+  const [classifyNotice, setClassifyNotice] = useState('')
+  const [classifyError, setClassifyError] = useState('')
   const ov = useAsync(api.overview, [])
   const src = useAsync(api.sources, [])
+  const topics = useAsync(() => api.topics(topicDays), [topicDays])
   const recent = useAsync(() => api.conversations({ limit: 8 }), [])
   const daily = useDaily(days)
+
+  const runClassify = async () => {
+    if (classifying) return
+    setClassifying(true)
+    setClassifyError('')
+    setClassifyNotice('')
+    try {
+      const res = await api.classifyTopics(50)
+      setClassifyNotice(
+        res.processed
+          ? `Đã phân loại ${fmtNum(res.processed)} hội thoại${res.remaining ? ` (còn ${fmtNum(res.remaining)} chưa phân loại)` : ''}.`
+          : 'Tất cả hội thoại đã được phân loại.',
+      )
+      topics.reload()
+      recent.reload()
+    } catch (e) {
+      setClassifyError(e instanceof Error ? e.message : 'Không phân loại được hội thoại.')
+    } finally {
+      setClassifying(false)
+    }
+  }
 
   const web = src.data?.filter((s) => s.kind === 'web' && s.conversations).length
   const zalo = src.data?.filter((s) => s.kind === 'zalo' && s.conversations).length
@@ -206,6 +324,32 @@ export default function Overview() {
           {ov.error ? <ErrorBox message={ov.error} onRetry={ov.reload} /> : <Health data={ov.data} />}
         </section>
 
+        <section className="card lg:col-span-3" aria-labelledby="h-topics">
+          <div className="flex flex-wrap items-center justify-between gap-3 px-5 pt-5 pb-3">
+            <div>
+              <h2 id="h-topics" className="font-semibold">Chủ đề hội thoại</h2>
+              <p className="mt-0.5 text-xs text-muted">Tự động phân loại bằng GPT theo nhóm thủ tục hành chính — bấm vào chủ đề để xem danh sách.</p>
+            </div>
+            <Segmented
+              label="Khoảng thời gian chủ đề"
+              value={topicDays}
+              onChange={setTopicDays}
+              options={[{ value: 0, label: 'Tất cả' }, { value: 7, label: '7 ngày' }, { value: 30, label: '30 ngày' }]}
+            />
+          </div>
+          {topics.error ? (
+            <ErrorBox message={topics.error} onRetry={topics.reload} />
+          ) : (
+            <TopicBreakdown
+              data={topics.data}
+              onClassify={() => void runClassify()}
+              classifying={classifying}
+              classifyNotice={classifyNotice}
+              classifyError={classifyError}
+            />
+          )}
+        </section>
+
         <section className="card lg:col-span-2" aria-labelledby="h-recent">
           <div className="flex items-center justify-between px-5 pt-5 pb-3">
             <h2 id="h-recent" className="font-semibold">Hội thoại gần đây</h2>
@@ -233,6 +377,7 @@ export default function Overview() {
                         <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted">
                           <span className="truncate">{c.user?.display_name || 'Khách ẩn danh'}</span>
                           <span className="hidden min-w-0 sm:inline-flex"><SourceBadge kind={s.kind} label={nameOf(s.key)} /></span>
+                          {c.topic && <span className="hidden min-w-0 md:inline-flex"><TopicBadge topic={c.topic} /></span>}
                         </div>
                       </div>
                       <div className="flex shrink-0 flex-col items-end gap-1">

@@ -1,7 +1,7 @@
 import { ArrowLeft, ChevronLeft, ChevronRight, Download, RefreshCw, Search, Send, X } from 'lucide-react'
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Empty, ErrorBox, SourceBadge, StatusPill, fmtAgo, fmtTime, sourceOf } from '../components/ui'
+import { Empty, ErrorBox, SourceBadge, StatusPill, TOPICS, TOPIC_LABEL, TopicBadge, fmtAgo, fmtTime, sourceOf } from '../components/ui'
 import { useAsync } from '../hooks/useAsync'
 import { api, type Citation, type Conversation, type Message, type Source } from '../lib/api'
 
@@ -427,6 +427,7 @@ function Transcript({ id, nameOf, refreshKey, onClose, onUpdated }: {
             <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted">
               <span className="max-w-[15rem]"><SourceBadge kind={s!.kind} label={nameOf(s!.key)} /></span>
               <StatusPill status={c.status} />
+              {c.topic && <span className="max-w-[15rem]"><TopicBadge topic={c.topic} /></span>}
               {c.status === 'needs_human' && !!c.handoff_since && (
                 <span title={fmtTime(c.handoff_since)}>Chờ từ {fmtTime(c.handoff_since)}</span>
               )}
@@ -558,6 +559,7 @@ export default function Conversations() {
   const [sp, setSp] = useSearchParams()
   const source = sp.get('source') || ''
   const status = sp.get('status') || ''
+  const topic = sp.get('topic') || ''
   const queue = status === 'needs_human'
   const q = sp.get('q') || ''
   const from = sp.get('from') || ''
@@ -593,9 +595,9 @@ export default function Conversations() {
     const dup = group.some((other) => other.source !== item.source && other.name === item.name)
     return dup ? `${item.name} (${item.source.replace(/^(web|zalo):/, '')})` : item.name
   }
-  const listKey = JSON.stringify([source, status, q, from, to, page])
+  const listKey = JSON.stringify([source, status, topic, q, from, to, page])
   const list = useAsync(
-    async () => ({ key: listKey, ...await api.conversations({ source, status, q, date_from: toTs(from), date_to: toTs(to, true), offset: page * LIMIT, limit: LIMIT }) }),
+    async () => ({ key: listKey, ...await api.conversations({ source, status, topic, q, date_from: toTs(from), date_to: toTs(to, true), offset: page * LIMIT, limit: LIMIT }) }),
     [listKey],
   )
   const currentList = list.data?.key === listKey ? list.data : undefined
@@ -611,6 +613,7 @@ export default function Conversations() {
     currentList && !list.loading && exportXlsx(
       currentList.conversations.map((c: Conversation) => ({
         'Mã': c.id, 'Tiêu đề': c.title, 'Người dân': whoOf(c), 'Nguồn': nameOf(sourceOf(c).key),
+        'Chủ đề': c.topic ? (TOPIC_LABEL[c.topic] || c.topic) : '',
         'Số tin nhắn': c.message_count, 'Trạng thái': c.status, 'Bắt đầu': fmtTime(c.started_at), 'Gần nhất': fmtTime(c.last_message_at),
       })),
       'Danh sach', `hoi-thoai-trang-${page + 1}.xlsx`)
@@ -686,12 +689,17 @@ export default function Conversations() {
             <option value={source}>{nameOf(source)}</option>
           )}
         </select>
-        <select id="f-status" aria-label="Trạng thái" className="field h-9 w-full sm:w-[155px]" value={status} onChange={(e) => set({ status: e.target.value })}>
+        <select id="f-status" aria-label="Trạng thái" className="field h-9 w-full sm:w-[148px]" value={status} onChange={(e) => set({ status: e.target.value })}>
           <option value="">Tất cả trạng thái</option>
           <option value="active">Đang mở</option>
           <option value="needs_human">Cần cán bộ</option>
           <option value="replied">Đã trả lời</option>
           <option value="closed">Đã đóng</option>
+        </select>
+        <select id="f-topic" aria-label="Chủ đề" className="field h-9 w-full sm:w-[190px]" value={topic} onChange={(e) => set({ topic: e.target.value })}>
+          <option value="">Tất cả chủ đề</option>
+          {TOPICS.map((t) => <option key={t.slug} value={t.slug}>{t.label}</option>)}
+          <option value="__unclassified__">Chưa phân loại</option>
         </select>
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-xs text-muted">Từ</span>
@@ -699,8 +707,8 @@ export default function Conversations() {
           <span className="text-xs text-muted">đến</span>
           <input id="f-to" aria-label="Đến ngày" type="date" className="field h-9 w-[138px] px-2.5" value={to} min={from || undefined} onChange={(e) => set({ to: e.target.value })} />
         </div>
-        {(q || source || status || from || to) && (
-          <button type="button" className="btn-ghost h-9 px-3 text-xs sm:text-sm" onClick={() => { setSearchInput(''); set({ q: '', source: '', status: '', from: '', to: '', page: 0, id: 0 }) }}>Xóa lọc</button>
+        {(q || source || status || topic || from || to) && (
+          <button type="button" className="btn-ghost h-9 px-3 text-xs sm:text-sm" onClick={() => { setSearchInput(''); set({ q: '', source: '', status: '', topic: '', from: '', to: '', page: 0, id: 0 }) }}>Xóa lọc</button>
         )}
       </div>
       </div>
@@ -718,7 +726,7 @@ export default function Conversations() {
             <div className="space-y-3 p-4">{[0, 1, 2, 3, 4].map((i) => <div key={i} className="skeleton h-12" />)}</div>
           ) : !currentList.conversations.length ? (
             <Empty title={queue ? 'Không có hội thoại cần xử lý' : 'Không có hội thoại phù hợp'}
-              hint={q || source || status || from || to ? 'Thử bỏ bớt bộ lọc hoặc chọn khoảng thời gian rộng hơn.' : undefined} />
+              hint={q || source || status || topic || from || to ? 'Thử bỏ bớt bộ lọc hoặc chọn khoảng thời gian rộng hơn.' : undefined} />
           ) : (
             <ul className={`divide-y divide-line ${list.loading ? 'opacity-60' : ''}`}>
               {currentList.conversations.map((c) => {
@@ -735,9 +743,10 @@ export default function Conversations() {
                           {queue && 'Chờ từ '}{fmtAgo(queue ? c.handoff_since || c.last_message_at : c.last_message_at)}
                         </span>
                       </div>
-                      <div className="mt-2 flex items-center gap-2">
-                        <span className="min-w-0 max-w-[60%]"><SourceBadge kind={s.kind} label={nameOf(s.key)} /></span>
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                        <span className="min-w-0 max-w-[55%]"><SourceBadge kind={s.kind} label={nameOf(s.key)} /></span>
                         <StatusPill status={c.status} />
+                        {c.topic && <span className="min-w-0 max-w-[48%]"><TopicBadge topic={c.topic} /></span>}
                         {c.title && nameOnly(c) && <span className="min-w-0 truncate text-xs text-muted">{nameOnly(c)}</span>}
                         <span className="num ml-auto shrink-0 whitespace-nowrap text-xs text-muted">{c.message_count} tin</span>
                       </div>
