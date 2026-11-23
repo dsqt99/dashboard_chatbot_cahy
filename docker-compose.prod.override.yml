@@ -1,0 +1,19 @@
+services:
+  dashboard-web:
+    ports:
+      - "127.0.0.1:3000:80"
+    environment:
+      ADMIN_API_UPSTREAM: http://zalo-oa:8081
+      WIKI_API_UPSTREAM: http://wiki_api:5055
+    networks:
+      - proxy-net
+      - chatbot
+      - wiki
+
+networks:
+  chatbot:
+    external: true
+    name: chatbot_default
+  wiki:
+    external: true
+    name: cahy-internal
