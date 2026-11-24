@@ -50,6 +50,7 @@ export default function OAs() {
   const [deptId, setDeptId] = useState('')
   const [replyMode, setReplyMode] = useState<'all' | 'whitelist'>('all')
   const [whitelistText, setWhitelistText] = useState('')
+  const [debounceSeconds, setDebounceSeconds] = useState('30')
   const [saving, setSaving] = useState(false)
 
   // Credentials states
@@ -71,6 +72,7 @@ export default function OAs() {
     setDeptId('')
     setReplyMode('all')
     setWhitelistText('')
+    setDebounceSeconds('30')
     setErr('')
     setFormOpen(true)
   }
@@ -83,6 +85,7 @@ export default function OAs() {
     setDeptId(oa.department_id || '')
     setReplyMode(oa.reply_mode || 'all')
     setWhitelistText((oa.allowed_user_ids || []).join('\n'))
+    setDebounceSeconds(String(oa.debounce_seconds ?? 30))
     setErr('')
     setFormOpen(true)
   }
@@ -114,6 +117,7 @@ export default function OAs() {
       .split(/[\n,]+/)
       .map((s) => s.trim())
       .filter(Boolean)
+    const parsedDebounce = Math.max(0, Math.min(300, Math.floor(Number(debounceSeconds) || 0)))
 
     try {
       if (editing) {
@@ -124,6 +128,7 @@ export default function OAs() {
           department_name: dept?.name || '',
           reply_mode: replyMode,
           allowed_user_ids,
+          debounce_seconds: parsedDebounce,
         })
       } else {
         await api.createOA({
@@ -134,6 +139,7 @@ export default function OAs() {
           department_name: dept?.name || '',
           reply_mode: replyMode,
           allowed_user_ids,
+          debounce_seconds: parsedDebounce,
         })
       }
       setFormOpen(false)
@@ -267,6 +273,7 @@ export default function OAs() {
                     : <span className="font-medium text-warn">Chưa gán Agent</span>}
                   {oa.department_name ? ` · ${oa.department_name}` : ''}<OrphanDept id={oa.department_id} depts={depts.data} />
                   {oa.reply_mode === 'whitelist' ? ` · Whitelist (${oa.allowed_user_ids?.length || 0})` : ''}
+                  {` · ${(oa.debounce_seconds ?? 30) > 0 ? `Chờ gom tin: ${oa.debounce_seconds ?? 30}s` : 'Trả lời ngay'}`}
                 </p>
                 {sources.data
                   ? <SourceStats sources={sources.data.filter((s) => s.source === `zalo:${oa.oa_id}`)} />
@@ -339,6 +346,21 @@ export default function OAs() {
               <textarea id="oa-wl" rows={3} className="field h-auto py-2 font-mono text-xs" value={whitelistText} onChange={(e) => setWhitelistText(e.target.value)} />
             </div>
           )}
+          <div>
+            <label htmlFor="oa-debounce" className="label">Thời gian chờ gom tin nhắn (giây)</label>
+            <input
+              id="oa-debounce"
+              type="number"
+              min={0}
+              max={300}
+              className="field"
+              value={debounceSeconds}
+              onChange={(e) => setDebounceSeconds(e.target.value)}
+            />
+            <p className="mt-1 text-xs text-muted">
+              Chờ người dùng ngừng nhắn thêm trong khoảng thời gian này rồi gom thành 1 lượt trả lời (0–300s). Đặt 0 để trả lời ngay.
+            </p>
+          </div>
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" className="btn-ghost" onClick={() => setFormOpen(false)}>Hủy</button>
             <button type="submit" className="btn-primary" disabled={saving}>{saving ? 'Đang lưu...' : 'Lưu OA'}</button>

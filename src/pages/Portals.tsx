@@ -49,10 +49,10 @@ const portalOwns = (p: Portal, s: Source) => {
 
 const MAX_SUGGESTIONS = 3
 
-type Form = { name: string; domains: string; agent_id: string; department_id: string; suggestions: string[] } & Omit<PortalWidget, 'suggestions'>
+type Form = { name: string; domains: string; agent_id: string; department_id: string; debounce_seconds: string; suggestions: string[] } & Omit<PortalWidget, 'suggestions'>
 
 const EMPTY: Form = {
-  name: '', domains: '', agent_id: '', department_id: '', suggestions: [],
+  name: '', domains: '', agent_id: '', department_id: '', debounce_seconds: '0', suggestions: [],
   title: '', brand: '', tagline: '', tooltip: '', welcome: '', placeholder: '', position: 'right',
   bot_avatar: '', title_avatar: '',
 }
@@ -142,7 +142,9 @@ export default function Portals() {
     setF(p ? {
       ...EMPTY, ...p.widget,
       name: p.name, domains: p.domains.join('\n'), agent_id: p.agent_id || '',
-      department_id: p.department_id || '', suggestions: (p.widget.suggestions || []).slice(0, MAX_SUGGESTIONS),
+      department_id: p.department_id || '',
+      debounce_seconds: String(p.debounce_seconds ?? 0),
+      suggestions: (p.widget.suggestions || []).slice(0, MAX_SUGGESTIONS),
     } : EMPTY)
     setFormOpen(true)
   }
@@ -151,11 +153,13 @@ export default function Portals() {
     e.preventDefault()
     setSaving(true)
     setErr('')
-    const { name, domains, agent_id, department_id, suggestions, ...widget } = f
+    const { name, domains, agent_id, department_id, debounce_seconds, suggestions, ...widget } = f
+    const parsedDebounce = Math.max(0, Math.min(300, Math.floor(Number(debounce_seconds) || 0)))
     const body = {
       name, agent_id, department_id,
       department_name: depts.data?.find((d) => d.id === department_id)?.name || '',
       domains: lines(domains),
+      debounce_seconds: parsedDebounce,
       widget: { ...widget, suggestions: suggestions.map((s) => s.trim()).filter(Boolean).slice(0, MAX_SUGGESTIONS) },
     }
     try {
@@ -225,6 +229,7 @@ export default function Portals() {
                   Agent: <span className="font-medium text-ink">{agentName(p.agent_id)}</span>
                   {p.department_name ? ` · ${p.department_name}` : ''}<OrphanDept id={p.department_id} depts={depts.data} />
                   {` · ${p.domains.length ? p.domains.join(', ') : 'Mọi tên miền'}`}
+                  {(p.debounce_seconds ?? 0) > 0 ? ` · Chờ gom tin: ${p.debounce_seconds}s` : ''}
                   {p.created_at ? ` · tạo ${fmtAgo(p.created_at)}` : ''}
                 </p>
                 <SourceStats sources={web?.filter((s) => portalOwns(p, s))} />
@@ -295,6 +300,21 @@ export default function Portals() {
               </select>
               {depts.error && <DeptError message={depts.error} onRetry={depts.reload} />}
             </div>
+          </div>
+          <div>
+            <label htmlFor="pt-debounce" className="label">Thời gian chờ gom tin nhắn (giây)</label>
+            <input
+              id="pt-debounce"
+              type="number"
+              min={0}
+              max={300}
+              className="field"
+              value={f.debounce_seconds}
+              onChange={(e) => set({ debounce_seconds: e.target.value })}
+            />
+            <p className="mt-1 text-xs text-muted">
+              Chờ người dùng ngừng nhắn thêm trong khoảng thời gian này rồi gom thành 1 lượt trả lời (0–300s). Đặt 0 để trả lời ngay.
+            </p>
           </div>
 
           <fieldset className="space-y-3 rounded-lg border border-line p-4">

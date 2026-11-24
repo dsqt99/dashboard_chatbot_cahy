@@ -1,5 +1,5 @@
-import { Bot, FlaskConical, Pencil, Plus, Trash2 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { Bot, FlaskConical, Pencil, Plus, Search, Trash2 } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Modal from '../components/Modal'
 import { DeptError, DeptOptions, Empty, ErrorBox, OrphanDept, PageHeader, fmtTime } from '../components/ui'
@@ -30,6 +30,8 @@ export default function Agents() {
   const [docsLoading, setDocsLoading] = useState(false)
   const [docsError, setDocsError] = useState('')
   const [docsReloadSeq, setDocsReloadSeq] = useState(0)
+  const [docSearch, setDocSearch] = useState('')
+  const [docDeptFilter, setDocDeptFilter] = useState('')
 
   useEffect(() => {
     if (!formOpen) return
@@ -62,6 +64,8 @@ export default function Agents() {
     setKnowledgeType('')
     setSelectedDocs([])
     setSystemPrompt('')
+    setDocSearch('')
+    setDocDeptFilter('')
     setErr('')
     setFormOpen(true)
   }
@@ -76,13 +80,52 @@ export default function Agents() {
       setKnowledgeType(full.knowledge_type || '')
       setSelectedDocs(full.document_ids || [])
       setSystemPrompt(full.system_prompt || '')
+      setDocSearch('')
+      setDocDeptFilter('')
       setFormOpen(true)
     } catch (ex) {
       setErr(ex instanceof Error ? ex.message : 'Không tải được chi tiết Agent')
     }
   }
 
-  const allDocsSelected = docs.length > 0 && docs.every((d) => selectedDocs.includes(d.source_id))
+  const isDocShared = (d: Doc) =>
+    Boolean(d.is_shared) ||
+    d.scope_type === 'global' ||
+    (!(d.department_ids && d.department_ids.length) && d.scope_type !== 'department' && d.scope_type !== 'personal')
+
+  const docDeptOptions = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const d of docs) {
+      const ids = d.department_ids || []
+      const names = d.department_names || []
+      ids.forEach((id, idx) => {
+        if (id && !map.has(id)) {
+          map.set(id, names[idx] || depts.data?.find((dep) => dep.id === id)?.name || id)
+        }
+      })
+    }
+    return [...map.entries()]
+      .map(([id, label]) => ({ id, name: label }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'vi'))
+  }, [docs, depts.data])
+
+  const filteredDocs = useMemo(() => {
+    const q = docSearch.trim().toLowerCase()
+    return docs.filter((d) => {
+      if (docDeptFilter === '__shared__' && !isDocShared(d)) return false
+      if (docDeptFilter && docDeptFilter !== '__shared__' && !(d.department_ids || []).includes(docDeptFilter)) {
+        return false
+      }
+      if (!q) return true
+      return (
+        (d.title || '').toLowerCase().includes(q) ||
+        d.source_id.toLowerCase().includes(q) ||
+        (d.knowledge_type || '').toLowerCase().includes(q)
+      )
+    })
+  }, [docs, docSearch, docDeptFilter])
+
+  const allDocsSelected = filteredDocs.length > 0 && filteredDocs.every((d) => selectedDocs.includes(d.source_id))
 
   const toggleDoc = (id: string) => {
     setSelectedDocs((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
@@ -221,7 +264,34 @@ export default function Agents() {
                 </button>
               )}
             </div>
-            <div className="max-h-40 overflow-y-auto rounded-lg border border-line bg-sunken/40 p-2">
+            <div className="mb-2 grid gap-2 sm:grid-cols-2">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted" aria-hidden />
+                <input
+                  type="search"
+                  className="field h-8 pl-8 text-xs"
+                  value={docSearch}
+                  onChange={(e) => setDocSearch(e.target.value)}
+                  placeholder="Tìm theo tên tài liệu..."
+                  aria-label="Tìm tài liệu"
+                />
+              </div>
+              <select
+                className="field h-8 text-xs"
+                value={docDeptFilter}
+                onChange={(e) => setDocDeptFilter(e.target.value)}
+                aria-label="Lọc tài liệu theo phạm vi"
+              >
+                <option value="">Tất cả tài liệu ({docs.length})</option>
+                <option value="__shared__">Tài liệu chung</option>
+                {docDeptOptions.map((dep) => (
+                  <option key={dep.id} value={dep.id}>
+                    {dep.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="max-h-52 overflow-y-auto rounded-lg border border-line bg-sunken/40 p-2">
               {docsLoading ? (
                 <p className="p-2 text-xs text-muted">Đang tải danh sách tài liệu...</p>
               ) : docsError ? (
@@ -233,25 +303,36 @@ export default function Agents() {
                 </div>
               ) : !docs.length ? (
                 <p className="p-2 text-xs text-muted">Không có tài liệu nào trong lĩnh vực này.</p>
+              ) : !filteredDocs.length ? (
+                <p className="p-2 text-xs text-muted">Không tìm thấy tài liệu phù hợp với bộ lọc.</p>
               ) : (
                 <div className="space-y-1">
                   <label className="flex cursor-pointer items-center gap-2 rounded border-b border-line px-2 pb-1.5 pt-1 text-xs font-medium hover:bg-surface">
                     <input type="checkbox" checked={allDocsSelected}
-                      ref={(el) => { if (el) el.indeterminate = !allDocsSelected && docs.some((d) => selectedDocs.includes(d.source_id)) }}
+                      ref={(el) => { if (el) el.indeterminate = !allDocsSelected && filteredDocs.some((d) => selectedDocs.includes(d.source_id)) }}
                       onChange={() => {
-                        const ids = docs.map((d) => d.source_id)
+                        const ids = filteredDocs.map((d) => d.source_id)
                         setSelectedDocs((prev) => allDocsSelected
                           ? prev.filter((x) => !ids.includes(x))
                           : [...new Set([...prev, ...ids])])
                       }} />
-                    Chọn tất cả ({docs.length})
+                    Chọn tất cả ({filteredDocs.length})
                   </label>
-                  {docs.map((d) => (
-                    <label key={d.source_id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-xs hover:bg-surface">
-                      <input type="checkbox" checked={selectedDocs.includes(d.source_id)} onChange={() => toggleDoc(d.source_id)} />
-                      <span className="truncate">{d.title || d.source_id}</span>
-                    </label>
-                  ))}
+                  {filteredDocs.map((d) => {
+                    const shared = isDocShared(d)
+                    const deptLabel = d.department_names?.length ? d.department_names.join(', ') : ''
+                    return (
+                      <label key={d.source_id} className="flex cursor-pointer items-center justify-between gap-2 rounded px-2 py-1 text-xs hover:bg-surface">
+                        <span className="flex min-w-0 items-center gap-2">
+                          <input type="checkbox" checked={selectedDocs.includes(d.source_id)} onChange={() => toggleDoc(d.source_id)} />
+                          <span className="truncate">{d.title || d.source_id}</span>
+                        </span>
+                        <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${shared ? 'bg-accent-soft text-accent' : 'bg-sunken text-muted'}`}>
+                          {shared ? 'Chung' : (deptLabel || 'Phòng ban')}
+                        </span>
+                      </label>
+                    )
+                  })}
                 </div>
               )}
             </div>

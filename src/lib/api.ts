@@ -84,6 +84,7 @@ export interface OA {
   department_name?: string | null
   reply_mode?: 'all' | 'whitelist'
   allowed_user_ids?: string[]
+  debounce_seconds?: number
 }
 
 export interface OAStats extends OA {
@@ -150,6 +151,7 @@ export interface OABody {
   department_name?: string
   reply_mode?: 'all' | 'whitelist'
   allowed_user_ids?: string[]
+  debounce_seconds?: number
 }
 
 export interface AgentBody {
@@ -204,6 +206,7 @@ export interface Portal {
   agent_id?: string | null
   department_id?: string | null
   department_name?: string | null
+  debounce_seconds?: number
   widget: PortalWidget
   created_at?: number | null
 }
@@ -266,6 +269,10 @@ export interface Doc {
   source_id: string
   title: string
   knowledge_type: string
+  department_ids?: string[]
+  department_names?: string[]
+  scope_type?: string
+  is_shared?: boolean
 }
 
 export const api = {
@@ -343,6 +350,7 @@ export const api = {
     department_name?: string
     reply_mode?: 'all' | 'whitelist'
     allowed_user_ids?: string[]
+    debounce_seconds?: number
   }) => request<{ ok: boolean; oa_id?: string }>('/oa', { method: 'POST', body: JSON.stringify(body) }),
   updateOA: (oaId: string, body: OABody) =>
     request<{ ok: boolean }>(`/oa/${encodeURIComponent(oaId)}`, { method: 'PUT', body: JSON.stringify(body) }),
