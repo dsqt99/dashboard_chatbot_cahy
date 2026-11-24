@@ -47,10 +47,12 @@ const portalOwns = (p: Portal, s: Source) => {
   return p.domains.some((d) => { const h = bareHost(d); return h && (host === h || host.endsWith(`.${h}`)) })
 }
 
-type Form = { name: string; domains: string; agent_id: string; department_id: string; suggestions: string } & Omit<PortalWidget, 'suggestions'>
+const MAX_SUGGESTIONS = 3
+
+type Form = { name: string; domains: string; agent_id: string; department_id: string; suggestions: string[] } & Omit<PortalWidget, 'suggestions'>
 
 const EMPTY: Form = {
-  name: '', domains: '', agent_id: '', department_id: '', suggestions: '',
+  name: '', domains: '', agent_id: '', department_id: '', suggestions: [],
   title: '', brand: '', tagline: '', tooltip: '', welcome: '', placeholder: '', position: 'right',
   bot_avatar: '', title_avatar: '',
 }
@@ -131,7 +133,6 @@ export default function Portals() {
   const [embed, setEmbed] = useState<Portal | null>(null)
 
   const set = (patch: Partial<Form>) => setF((cur) => ({ ...cur, ...patch }))
-  const sugCount = lines(f.suggestions).length
   const agentName = (id?: string | null) => (id ? agents.data?.find((a) => a.agent_id === id)?.name || id : 'Agent mặc định')
   const snippet = (p: Portal) => `<script src="${list.data?.script_url}" data-key="${p.portal_id}" defer></script>`
 
@@ -141,7 +142,7 @@ export default function Portals() {
     setF(p ? {
       ...EMPTY, ...p.widget,
       name: p.name, domains: p.domains.join('\n'), agent_id: p.agent_id || '',
-      department_id: p.department_id || '', suggestions: (p.widget.suggestions || []).join('\n'),
+      department_id: p.department_id || '', suggestions: (p.widget.suggestions || []).slice(0, MAX_SUGGESTIONS),
     } : EMPTY)
     setFormOpen(true)
   }
@@ -155,7 +156,7 @@ export default function Portals() {
       name, agent_id, department_id,
       department_name: depts.data?.find((d) => d.id === department_id)?.name || '',
       domains: lines(domains),
-      widget: { ...widget, suggestions: lines(suggestions) },
+      widget: { ...widget, suggestions: suggestions.map((s) => s.trim()).filter(Boolean).slice(0, MAX_SUGGESTIONS) },
     }
     try {
       if (editing) await api.updatePortal(editing.portal_id, body)
@@ -324,13 +325,61 @@ export default function Portals() {
                 placeholder={'# Xin chào!\nTôi có thể hỗ trợ bạn tra cứu thủ tục hành chính...'} />
             </div>
             <div>
-              <div className="flex items-baseline justify-between">
-                <label htmlFor="pw-sugg" className="label">Câu hỏi gợi ý (mỗi dòng một câu)</label>
-                <span className={`num text-xs ${sugCount > 8 ? 'text-danger' : 'text-muted'}`}>{sugCount}/8</span>
+              <div className="mb-1.5 flex items-center justify-between gap-2">
+                <span className="label !mb-0">
+                  Câu hỏi gợi ý <span className="num font-normal text-muted">({f.suggestions.length}/{MAX_SUGGESTIONS})</span>
+                </span>
+                {f.suggestions.length < MAX_SUGGESTIONS && (
+                  <button
+                    type="button"
+                    onClick={() => set({ suggestions: [...f.suggestions, ''] })}
+                    className="inline-flex items-center gap-1 rounded-md border border-line bg-surface px-2.5 py-1 text-xs font-medium text-accent transition-colors hover:bg-accent-soft"
+                  >
+                    <Plus className="h-3.5 w-3.5" aria-hidden /> Thêm câu hỏi
+                  </button>
+                )}
               </div>
-              <textarea id="pw-sugg" rows={4} className="field" value={f.suggestions} onChange={(e) => set({ suggestions: e.target.value })}
-                placeholder={'Làm căn cước ở đâu?\nThủ tục đăng ký tạm trú'} />
-              {sugCount > 8 && <p className="mt-1 text-xs text-danger">Chỉ 8 câu đầu được hiển thị trên widget.</p>}
+              {f.suggestions.length === 0 ? (
+                <p className="rounded-lg border border-dashed border-line px-3 py-2.5 text-xs text-muted">
+                  Chưa thêm câu hỏi — widget sẽ dùng 3 câu gợi ý mặc định.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {f.suggestions.map((item, idx) => (
+                    <div key={idx} className="flex items-center gap-2">
+                      <span className="num flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-sunken text-xs font-medium text-muted">
+                        {idx + 1}
+                      </span>
+                      <input
+                        type="text"
+                        maxLength={120}
+                        aria-label={`Câu hỏi gợi ý ${idx + 1}`}
+                        className="field h-9 flex-1"
+                        value={item}
+                        placeholder={
+                          idx === 0 ? 'vd: Đăng ký xe lần đầu cần giấy tờ gì?'
+                            : idx === 1 ? 'vd: Đăng ký thường trú cần chuẩn bị gì?'
+                            : 'vd: Làm lại thẻ căn cước cần giấy tờ gì?'
+                        }
+                        onChange={(e) => {
+                          const next = [...f.suggestions]
+                          next[idx] = e.target.value
+                          set({ suggestions: next })
+                        }}
+                      />
+                      <button
+                        type="button"
+                        aria-label={`Xoá câu hỏi ${idx + 1}`}
+                        title="Xoá câu hỏi"
+                        onClick={() => set({ suggestions: f.suggestions.filter((_, i) => i !== idx) })}
+                        className="btn-ghost h-9 w-9 shrink-0 p-0 text-muted hover:text-danger"
+                      >
+                        <X className="h-4 w-4" aria-hidden />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
             <p className="text-xs text-muted">Để trống trường nào thì widget dùng nội dung mặc định.</p>
           </fieldset>
