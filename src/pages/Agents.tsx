@@ -28,18 +28,24 @@ export default function Agents() {
   const [systemPrompt, setSystemPrompt] = useState('')
   const [docs, setDocs] = useState<Doc[]>([])
   const [docsLoading, setDocsLoading] = useState(false)
+  const [docsError, setDocsError] = useState('')
+  const [docsReloadSeq, setDocsReloadSeq] = useState(0)
 
   useEffect(() => {
     if (!formOpen) return
     let alive = true
     setDocsLoading(true)
+    setDocsError('')
     api
       .documents(knowledgeType)
       .then((list) => {
         if (alive) setDocs(list)
       })
-      .catch(() => {
-        if (alive) setDocs([])
+      .catch((ex) => {
+        if (alive) {
+          setDocs([])
+          setDocsError(ex instanceof Error ? ex.message : 'Không tải được danh sách tài liệu từ Wiki.')
+        }
       })
       .finally(() => {
         if (alive) setDocsLoading(false)
@@ -47,7 +53,7 @@ export default function Agents() {
     return () => {
       alive = false
     }
-  }, [formOpen, knowledgeType])
+  }, [formOpen, knowledgeType, docsReloadSeq])
 
   const openCreate = () => {
     setEditing(null)
@@ -218,6 +224,13 @@ export default function Agents() {
             <div className="max-h-40 overflow-y-auto rounded-lg border border-line bg-sunken/40 p-2">
               {docsLoading ? (
                 <p className="p-2 text-xs text-muted">Đang tải danh sách tài liệu...</p>
+              ) : docsError ? (
+                <div className="flex items-center justify-between gap-2 p-2 text-xs text-danger">
+                  <span>{docsError}</span>
+                  <button type="button" className="shrink-0 font-medium text-accent hover:underline" onClick={() => setDocsReloadSeq((n) => n + 1)}>
+                    Thử lại
+                  </button>
+                </div>
               ) : !docs.length ? (
                 <p className="p-2 text-xs text-muted">Không có tài liệu nào trong lĩnh vực này.</p>
               ) : (
