@@ -220,6 +220,7 @@ export interface Conversation {
   message_count: number
   status: string
   topic?: string
+  topics?: string[]
   handoff_since?: number
   web_reply_available?: boolean
   started_at: number

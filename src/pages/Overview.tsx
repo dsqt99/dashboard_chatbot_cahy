@@ -5,7 +5,7 @@ import { ArrowRight, Loader2, MessageSquare, Sparkles, TrendingDown, TrendingUp 
 import { useMemo, useState, type ReactNode } from 'react'
 import { Line } from 'react-chartjs-2'
 import { Link } from 'react-router-dom'
-import { ErrorBox, Empty, PageHeader, Segmented, SourceBadge, StatusPill, TOPIC_BAR, TopicBadge, fmtAgo, fmtNum, sourceOf } from '../components/ui'
+import { ErrorBox, Empty, PageHeader, Segmented, SourceBadge, StatusPill, TOPIC_BAR, TopicBadges, fmtAgo, fmtNum, sourceOf, topicsOf } from '../components/ui'
 import { useAsync } from '../hooks/useAsync'
 import { api, type DailyPoint, type Overview as OverviewData, type Source, type TopicStatsResponse } from '../lib/api'
 
@@ -394,7 +394,7 @@ export default function Overview() {
                         <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted">
                           <span className="truncate">{c.user?.display_name || 'Khách ẩn danh'}</span>
                           <span className="hidden min-w-0 sm:inline-flex"><SourceBadge kind={s.kind} label={nameOf(s.key)} /></span>
-                          {c.topic && <span className="hidden min-w-0 md:inline-flex"><TopicBadge topic={c.topic} /></span>}
+                          <TopicBadges topics={topicsOf(c)} max={2} itemClassName="hidden min-w-0 max-w-[13rem] md:inline-flex" />
                         </div>
                       </div>
                       <div className="flex shrink-0 flex-col items-end gap-1">

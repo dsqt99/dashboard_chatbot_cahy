@@ -62,6 +62,11 @@ export const TOPICS = [
 export const TOPIC_LABEL: Record<string, string> = Object.fromEntries(TOPICS.map((t) => [t.slug, t.label]))
 export const TOPIC_BAR: Record<string, string> = Object.fromEntries(TOPICS.map((t) => [t.slug, t.bar]))
 
+export function topicsOf(c: { topic?: string; topics?: string[] }): string[] {
+  if (Array.isArray(c.topics) && c.topics.length) return c.topics
+  return c.topic ? [c.topic] : []
+}
+
 export function TopicBadge({ topic }: { topic?: string }) {
   if (!topic) return null
   const label = TOPIC_LABEL[topic] || topic
@@ -70,6 +75,35 @@ export function TopicBadge({ topic }: { topic?: string }) {
       <Tag className="h-3 w-3 shrink-0" aria-hidden />
       <span className="truncate">{label}</span>
     </span>
+  )
+}
+
+export function TopicBadges({
+  topics,
+  max,
+  itemClassName = 'min-w-0 max-w-[15rem]',
+}: {
+  topics: string[]
+  max?: number
+  itemClassName?: string
+}) {
+  if (!topics.length) return null
+  const visible = max && topics.length > max ? topics.slice(0, max) : topics
+  const hidden = max && topics.length > max ? topics.slice(max) : []
+  return (
+    <>
+      {visible.map((slug) => (
+        <span key={slug} className={itemClassName}><TopicBadge topic={slug} /></span>
+      ))}
+      {hidden.length > 0 && (
+        <span
+          className="inline-flex shrink-0 items-center rounded-md bg-sunken px-1.5 py-0.5 text-xs font-medium text-muted"
+          title={hidden.map((slug) => TOPIC_LABEL[slug] || slug).join(', ')}
+        >
+          +{hidden.length}
+        </span>
+      )}
+    </>
   )
 }
 

@@ -1,7 +1,7 @@
 import { ArrowLeft, ChevronLeft, ChevronRight, Download, Loader2, RefreshCw, Search, Send, Sparkles, X } from 'lucide-react'
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Empty, ErrorBox, SourceBadge, StatusPill, TOPICS, TOPIC_LABEL, TopicBadge, fmtAgo, fmtTime, sourceOf } from '../components/ui'
+import { Empty, ErrorBox, SourceBadge, StatusPill, TOPICS, TOPIC_LABEL, TopicBadges, fmtAgo, fmtTime, sourceOf, topicsOf } from '../components/ui'
 import { useAsync } from '../hooks/useAsync'
 import { api, type Citation, type Conversation, type Message, type Source } from '../lib/api'
 
@@ -427,7 +427,7 @@ function Transcript({ id, nameOf, refreshKey, onClose, onUpdated }: {
             <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted">
               <span className="max-w-[15rem]"><SourceBadge kind={s!.kind} label={nameOf(s!.key)} /></span>
               <StatusPill status={c.status} />
-              {c.topic && <span className="max-w-[15rem]"><TopicBadge topic={c.topic} /></span>}
+              <TopicBadges topics={topicsOf(c)} itemClassName="max-w-[15rem]" />
               {c.status === 'needs_human' && !!c.handoff_since && (
                 <span title={fmtTime(c.handoff_since)}>Chờ từ {fmtTime(c.handoff_since)}</span>
               )}
@@ -657,7 +657,7 @@ export default function Conversations() {
     currentList && !list.loading && exportXlsx(
       currentList.conversations.map((c: Conversation) => ({
         'Mã': c.id, 'Tiêu đề': c.title, 'Người dân': whoOf(c), 'Nguồn': nameOf(sourceOf(c).key),
-        'Chủ đề': c.topic ? (TOPIC_LABEL[c.topic] || c.topic) : '',
+        'Chủ đề': topicsOf(c).map((slug) => TOPIC_LABEL[slug] || slug).join(', '),
         'Số tin nhắn': c.message_count, 'Trạng thái': c.status, 'Bắt đầu': fmtTime(c.started_at), 'Gần nhất': fmtTime(c.last_message_at),
       })),
       'Danh sach', `hoi-thoai-trang-${page + 1}.xlsx`)
@@ -804,7 +804,7 @@ export default function Conversations() {
                       <div className="mt-2 flex flex-wrap items-center gap-1.5">
                         <span className="min-w-0 max-w-[55%]"><SourceBadge kind={s.kind} label={nameOf(s.key)} /></span>
                         <StatusPill status={c.status} />
-                        {c.topic && <span className="min-w-0 max-w-[48%]"><TopicBadge topic={c.topic} /></span>}
+                        <TopicBadges topics={topicsOf(c)} max={2} itemClassName="min-w-0 max-w-[48%]" />
                         {c.title && nameOnly(c) && <span className="min-w-0 truncate text-xs text-muted">{nameOnly(c)}</span>}
                         <span className="num ml-auto shrink-0 whitespace-nowrap text-xs text-muted">{c.message_count} tin</span>
                       </div>
