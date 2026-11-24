@@ -9,6 +9,7 @@ const LIMIT = 30
 const SENDER: Record<string, string> = { user: 'Người dân', assistant: 'Trợ lý ảo', officer: 'Cán bộ', staff: 'Cán bộ', system: 'Hệ thống' }
 const CONV_STATUSES = [
   { value: 'active', label: 'Đang mở' },
+  { value: 'direct_human', label: 'Cần trực tiếp' },
   { value: 'needs_human', label: 'Cần cán bộ' },
   { value: 'replied', label: 'Đã trả lời' },
   { value: 'closed', label: 'Đã đóng' },
@@ -428,7 +429,7 @@ function Transcript({ id, nameOf, refreshKey, onClose, onUpdated }: {
               <span className="max-w-[15rem]"><SourceBadge kind={s!.kind} label={nameOf(s!.key)} /></span>
               <StatusPill status={c.status} />
               <TopicBadges topics={topicsOf(c)} itemClassName="max-w-[15rem]" />
-              {c.status === 'needs_human' && !!c.handoff_since && (
+              {(c.status === 'needs_human' || c.status === 'direct_human') && !!c.handoff_since && (
                 <span title={fmtTime(c.handoff_since)}>Chờ từ {fmtTime(c.handoff_since)}</span>
               )}
               <span>{c.message_count} tin · {fmtTime(c.started_at)}</span>
@@ -560,7 +561,7 @@ export default function Conversations() {
   const source = sp.get('source') || ''
   const status = sp.get('status') || ''
   const topic = sp.get('topic') || ''
-  const queue = status === 'needs_human'
+  const queue = status === 'needs_human' || status === 'direct_human'
   const q = sp.get('q') || ''
   const from = sp.get('from') || ''
   const to = sp.get('to') || ''
@@ -668,11 +669,19 @@ export default function Conversations() {
       <header className="mb-2.5 flex flex-wrap items-center gap-x-3 gap-y-2">
         <h1 className="text-xl font-semibold tracking-tight">Hội thoại</h1>
         <div role="group" aria-label="Chế độ xem hội thoại" className="flex gap-0.5 rounded-lg bg-sunken p-0.5">
-          {[{ value: '', label: 'Tất cả' }, { value: 'needs_human', label: 'Cần xử lý' }].map(({ value, label }) => {
-            const active = queue === !!value
+          {[
+            { value: '', label: 'Tất cả' },
+            { value: 'direct_human', label: 'Cần trực tiếp' },
+            { value: 'needs_human', label: 'Cần cán bộ' },
+          ].map(({ value, label }) => {
+            const active = status === value
             return (
               <button key={value} type="button" aria-pressed={active} onClick={() => set({ status: value, page: 0, id: 0 })}
-                className={`rounded-md px-2.5 py-1.5 text-xs font-medium sm:text-sm ${active ? 'bg-surface text-accent shadow-card' : 'text-muted hover:text-ink'}`}>
+                className={`rounded-md px-2.5 py-1.5 text-xs font-medium sm:text-sm ${
+                  active
+                    ? value === 'direct_human' ? 'bg-surface text-danger shadow-card' : 'bg-surface text-accent shadow-card'
+                    : 'text-muted hover:text-ink'
+                }`}>
                 {label}
               </button>
             )
@@ -747,9 +756,10 @@ export default function Conversations() {
             <option value={source}>{nameOf(source)}</option>
           )}
         </select>
-        <select id="f-status" aria-label="Trạng thái" className="field h-9 w-full sm:w-[148px]" value={status} onChange={(e) => set({ status: e.target.value })}>
+        <select id="f-status" aria-label="Trạng thái" className="field h-9 w-full sm:w-[152px]" value={status} onChange={(e) => set({ status: e.target.value })}>
           <option value="">Tất cả trạng thái</option>
           <option value="active">Đang mở</option>
+          <option value="direct_human">Cần trực tiếp</option>
           <option value="needs_human">Cần cán bộ</option>
           <option value="replied">Đã trả lời</option>
           <option value="closed">Đã đóng</option>

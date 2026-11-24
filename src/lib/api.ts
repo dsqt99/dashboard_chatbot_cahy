@@ -320,7 +320,7 @@ export const api = {
     request<{ ok: boolean; message_id?: string | number }>(`/conversations/${id}/reply`, {
       method: 'POST', body: JSON.stringify({ message, request_id: requestId }),
     }),
-  setConversationStatus: (id: number, status: 'active' | 'needs_human' | 'replied' | 'closed') =>
+  setConversationStatus: (id: number, status: 'active' | 'needs_human' | 'direct_human' | 'replied' | 'closed') =>
     request<{ ok: boolean; status: string }>(`/conversations/${id}/status`, {
       method: 'POST', body: JSON.stringify({ status }),
     }),

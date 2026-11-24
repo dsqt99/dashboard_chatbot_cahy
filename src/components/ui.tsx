@@ -42,6 +42,7 @@ const STATUS: Record<string, { label: string; cls: string }> = {
   active: { label: 'Đang mở', cls: 'text-ok bg-ok/10' },
   processing: { label: 'Đang xử lý', cls: 'text-accent bg-accent-soft' },
   needs_human: { label: 'Cần cán bộ', cls: 'text-warn bg-warn/10' },
+  direct_human: { label: 'Cần trực tiếp', cls: 'text-danger bg-danger/10 font-semibold' },
   replied: { label: 'Đã trả lời', cls: 'text-ok bg-ok/10' },
   closed: { label: 'Đã đóng', cls: 'text-muted bg-sunken' },
 }
