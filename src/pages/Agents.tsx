@@ -153,7 +153,7 @@ export default function Agents() {
                   <span className="rounded-md bg-sunken px-2 py-0.5 font-mono text-xs text-muted">{a.agent_id}</span>
                 </div>
                 <p className="text-xs text-muted">
-                  {a.department_name || 'Chưa gán phòng ban'}<OrphanDept id={a.department_id} depts={depts.data} />
+                  {a.department_name || 'Toàn bộ phòng ban'}<OrphanDept id={a.department_id} depts={depts.data} />
                   {a.knowledge_type ? ` · Tri thức: ${a.knowledge_type}` : ' · Toàn bộ tri thức'}
                   {a.document_ids?.length ? ` · ${a.document_ids.length} tài liệu chọn riêng` : ' · Toàn bộ tài liệu'}
                   {a.created_at ? ` · Tạo ${fmtTime(a.created_at)}` : ''}
@@ -189,7 +189,7 @@ export default function Agents() {
             <div>
               <label htmlFor="ag-dept" className="label">Phòng ban phụ trách</label>
               <select id="ag-dept" className="field" value={deptId} onChange={(e) => setDeptId(e.target.value)}>
-                <DeptOptions value={deptId} depts={depts.data} />
+                <DeptOptions value={deptId} depts={depts.data} emptyLabel="Toàn bộ phòng ban" />
               </select>
               {depts.error && <DeptError message={depts.error} onRetry={depts.reload} />}
             </div>

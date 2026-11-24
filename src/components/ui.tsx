@@ -199,10 +199,10 @@ export function OrphanDept({ id, depts }: { id?: string | null; depts?: { id: st
   return isOrphanDept(id, depts) ? <span className="text-danger"> (không còn trong Arkon)</span> : null
 }
 
-export function DeptOptions({ value, depts }: { value: string; depts?: { id: string; name: string }[] }) {
+export function DeptOptions({ value, depts, emptyLabel = 'Không gán phòng ban' }: { value: string; depts?: { id: string; name: string }[]; emptyLabel?: string }) {
   return (
     <>
-      <option value="">Không gán phòng ban</option>
+      <option value="">{emptyLabel}</option>
       {depts?.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
       {/* Danh mục chưa tải được: vẫn giữ phòng ban đang gán để select không hiện sai "Không gán". */}
       {value && !depts && <option value={value}>Phòng ban hiện tại</option>}
