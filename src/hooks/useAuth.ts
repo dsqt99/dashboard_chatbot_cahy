@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, auth, type User } from '../lib/api'
 
-/** Phiên đăng nhập bằng JWT của admin API (tài khoản dùng chung với trang quản trị Zalo OA). */
+/** Phiên đăng nhập qua HttpOnly cookie của admin API (dùng chung với Zalo OA). */
 export function useAuth() {
   const [user, setUser] = useState<User | null>(null)
-  const [checking, setChecking] = useState(!!auth.get())
+  const [checking, setChecking] = useState(true)
 
   useEffect(() => {
-    if (!auth.get()) return
-    api.me().then(setUser).catch(() => auth.clear()).finally(() => setChecking(false))
+    auth.clearLegacy()
+    api.me().then(setUser).catch(() => setUser(null)).finally(() => setChecking(false))
   }, [])
 
   useEffect(() => {
@@ -17,13 +17,12 @@ export function useAuth() {
     return () => window.removeEventListener('auth:expired', onExpired)
   }, [])
 
-  const login = useCallback((token: string, u: User) => {
-    auth.set(token)
+  const login = useCallback((_token: string, u: User) => {
     setUser(u)
   }, [])
 
   const logout = useCallback(() => {
-    auth.clear()
+    void api.logout().catch(() => {})
     setUser(null)
   }, [])
 

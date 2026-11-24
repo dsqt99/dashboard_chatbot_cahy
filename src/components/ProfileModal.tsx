@@ -1,4 +1,5 @@
-import { Camera, Check, Eye, EyeOff, KeyRound, User as UserIcon } from 'lucide-react'
+import { Camera, Check, Copy, Eye, EyeOff, KeyRound, ShieldCheck, User as UserIcon } from 'lucide-react'
+import QRCode from 'qrcode'
 import { useEffect, useRef, useState } from 'react'
 import { api, type User } from '../lib/api'
 import Modal from './Modal'
@@ -14,7 +15,7 @@ export default function ProfileModal({
   onClose: () => void
   onUserUpdate: (u: User) => void
 }) {
-  const [tab, setTab] = useState<'profile' | 'password'>('profile')
+  const [tab, setTab] = useState<'profile' | 'password' | '2fa'>('profile')
   const [fullName, setFullName] = useState(user.full_name || '')
   const [avatar, setAvatar] = useState(user.avatar || '')
   const [uploading, setUploading] = useState(false)
@@ -28,6 +29,13 @@ export default function ProfileModal({
   const [confirmPass, setConfirmPass] = useState('')
   const [showPass, setShowPass] = useState(false)
 
+  // 2FA tab
+  const [totpSecret, setTotpSecret] = useState('')
+  const [totpQr, setTotpQr] = useState('')
+  const [totpCode, setTotpCode] = useState('')
+  const [disablePass, setDisablePass] = useState('')
+  const [copiedSecret, setCopiedSecret] = useState(false)
+
   const fileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -37,6 +45,10 @@ export default function ProfileModal({
     setCurPass('')
     setNewPass('')
     setConfirmPass('')
+    setTotpSecret('')
+    setTotpQr('')
+    setTotpCode('')
+    setDisablePass('')
     setErr('')
     setOkMsg('')
   }, [open, user])
@@ -103,6 +115,67 @@ export default function ProfileModal({
     }
   }
 
+  const handleStartTotp = async () => {
+    setSaving(true)
+    setErr('')
+    setOkMsg('')
+    try {
+      const res = await api.totpSetup()
+      const qrDataUrl = await QRCode.toDataURL(res.otpauth_url, { width: 184, margin: 1 })
+      setTotpSecret(res.secret)
+      setTotpQr(qrDataUrl)
+      setTotpCode('')
+    } catch (ex) {
+      setErr(ex instanceof Error ? ex.message : 'Không khởi tạo được mã 2FA.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleEnableTotp = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSaving(true)
+    setErr('')
+    setOkMsg('')
+    try {
+      const res = await api.totpEnable(totpCode)
+      onUserUpdate(res.user ? res.user : { ...user, totp_enabled: true })
+      setTotpSecret('')
+      setTotpQr('')
+      setTotpCode('')
+      setOkMsg('Đã bật xác thực 2 lớp (TOTP) cho tài khoản.')
+    } catch (ex) {
+      setErr(ex instanceof Error ? ex.message : 'Kích hoạt 2FA thất bại.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDisableTotp = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSaving(true)
+    setErr('')
+    setOkMsg('')
+    try {
+      const res = await api.totpDisable(disablePass, totpCode)
+      onUserUpdate(res.user ? res.user : { ...user, totp_enabled: false })
+      setDisablePass('')
+      setTotpCode('')
+      setOkMsg('Đã tắt xác thực 2 lớp.')
+    } catch (ex) {
+      setErr(ex instanceof Error ? ex.message : 'Không tắt được 2FA.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const copySecret = () => {
+    if (!totpSecret) return
+    navigator.clipboard?.writeText(totpSecret)
+    setCopiedSecret(true)
+    setTimeout(() => setCopiedSecret(false), 1500)
+  }
+
   const initial = (user.full_name || user.username).slice(0, 1).toUpperCase()
 
   return (
@@ -115,7 +188,7 @@ export default function ProfileModal({
             tab === 'profile' ? 'bg-surface text-ink shadow-sm' : 'text-muted hover:text-ink'
           }`}
         >
-          <UserIcon className="h-3.5 w-3.5" aria-hidden /> Hồ sơ cá nhân
+          <UserIcon className="h-3.5 w-3.5" aria-hidden /> Hồ sơ
         </button>
         <button
           type="button"
@@ -124,7 +197,16 @@ export default function ProfileModal({
             tab === 'password' ? 'bg-surface text-ink shadow-sm' : 'text-muted hover:text-ink'
           }`}
         >
-          <KeyRound className="h-3.5 w-3.5" aria-hidden /> Đổi mật khẩu
+          <KeyRound className="h-3.5 w-3.5" aria-hidden /> Mật khẩu
+        </button>
+        <button
+          type="button"
+          onClick={() => { setTab('2fa'); setErr(''); setOkMsg('') }}
+          className={`flex flex-1 items-center justify-center gap-1.5 rounded-md py-1.5 text-xs font-medium transition-colors ${
+            tab === '2fa' ? 'bg-surface text-ink shadow-sm' : 'text-muted hover:text-ink'
+          }`}
+        >
+          <ShieldCheck className="h-3.5 w-3.5" aria-hidden /> Bảo mật 2FA
         </button>
       </div>
 
@@ -185,7 +267,7 @@ export default function ProfileModal({
             </button>
           </div>
         </form>
-      ) : (
+      ) : tab === 'password' ? (
         <form onSubmit={handleChangePassword} className="space-y-4">
           <div>
             <label htmlFor="pf-cur" className="label">Mật khẩu hiện tại</label>
@@ -239,6 +321,97 @@ export default function ProfileModal({
             </button>
           </div>
         </form>
+      ) : null}
+      {tab === '2fa' && (
+        user.totp_enabled ? (
+          <form onSubmit={handleDisableTotp} className="space-y-4">
+            <div className="flex items-center gap-2 rounded-lg border border-ok/30 bg-ok/10 px-3 py-2.5 text-xs font-medium text-ok">
+              <ShieldCheck className="h-4 w-4 shrink-0" aria-hidden />
+              Tài khoản đang được bảo vệ bằng xác thực 2 lớp (TOTP).
+            </div>
+            <div>
+              <label htmlFor="pf-dis-pass" className="label">Mật khẩu hiện tại</label>
+              <input
+                id="pf-dis-pass"
+                type="password"
+                className="field"
+                required
+                value={disablePass}
+                onChange={(e) => setDisablePass(e.target.value)}
+              />
+            </div>
+            <div>
+              <label htmlFor="pf-dis-code" className="label">Mã xác thực 6 số từ ứng dụng</label>
+              <input
+                id="pf-dis-code"
+                className="field num tracking-widest"
+                inputMode="numeric"
+                maxLength={6}
+                required
+                placeholder="000000"
+                value={totpCode}
+                onChange={(e) => setTotpCode(e.target.value)}
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button type="button" className="btn-ghost" onClick={onClose}>Đóng</button>
+              <button type="submit" className="btn-ghost border-danger/40 text-danger hover:bg-danger/10" disabled={saving}>
+                {saving ? 'Đang tắt...' : 'Tắt xác thực 2 lớp'}
+              </button>
+            </div>
+          </form>
+        ) : totpQr ? (
+          <form onSubmit={handleEnableTotp} className="space-y-4">
+            <p className="text-xs text-muted">
+              Quét mã QR bằng <strong>Google Authenticator</strong> hoặc <strong>Microsoft Authenticator</strong>, rồi nhập mã 6 số để xác nhận.
+            </p>
+            <div className="flex flex-col items-center gap-2 rounded-lg border border-line bg-white p-3">
+              <img src={totpQr} alt="Mã QR xác thực 2 lớp" width={184} height={184} className="h-44 w-44" />
+            </div>
+            <div>
+              <span className="label">Hoặc nhập mã thủ công</span>
+              <div className="flex gap-2">
+                <input className="field font-mono text-xs" readOnly value={totpSecret} />
+                <button type="button" onClick={copySecret} className="btn-ghost shrink-0 px-3" title="Sao chép mã bí mật">
+                  {copiedSecret ? <Check className="h-4 w-4 text-ok" /> : <Copy className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+            <div>
+              <label htmlFor="pf-totp-code" className="label">Mã xác nhận 6 số</label>
+              <input
+                id="pf-totp-code"
+                className="field num tracking-widest"
+                inputMode="numeric"
+                maxLength={6}
+                required
+                placeholder="000000"
+                value={totpCode}
+                onChange={(e) => setTotpCode(e.target.value)}
+                autoFocus
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button type="button" className="btn-ghost" onClick={() => { setTotpQr(''); setTotpSecret('') }}>Huỷ</button>
+              <button type="submit" className="btn-primary" disabled={saving || totpCode.trim().length < 6}>
+                {saving ? 'Đang xác nhận...' : 'Xác nhận kích hoạt'}
+              </button>
+            </div>
+          </form>
+        ) : (
+          <div className="space-y-4">
+            <p className="text-sm text-muted">
+              Bật xác thực 2 lớp (TOTP) giúp bảo vệ tài khoản ngay cả khi lộ mật khẩu. Mỗi lần đăng nhập sẽ cần thêm mã 6 số từ điện thoại.
+            </p>
+            <div className="flex justify-end gap-2 pt-2">
+              <button type="button" className="btn-ghost" onClick={onClose}>Đóng</button>
+              <button type="button" className="btn-primary" onClick={() => void handleStartTotp()} disabled={saving}>
+                <ShieldCheck className="h-4 w-4" aria-hidden />
+                {saving ? 'Đang tạo mã...' : 'Bật xác thực 2 lớp'}
+              </button>
+            </div>
+          </div>
+        )
       )}
     </Modal>
   )

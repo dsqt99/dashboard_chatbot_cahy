@@ -80,7 +80,8 @@ export default function LoginPage({ onLogin }: { onLogin: (token: string, user: 
               <div>
                 <label htmlFor="t" className="label">Mã xác thực 2 lớp (TOTP)</label>
                 <input id="t" className="field num tracking-widest" inputMode="numeric" autoComplete="one-time-code"
-                  maxLength={6} value={totp} onChange={(e) => setTotp(e.target.value)} autoFocus />
+                  maxLength={6} placeholder="Nhập mã 6 số" value={totp} onChange={(e) => setTotp(e.target.value)} autoFocus />
+                <p className="mt-1 text-xs text-muted">Mở ứng dụng Authenticator (Google / Microsoft) để lấy mã 6 số.</p>
               </div>
             )}
             {error && (

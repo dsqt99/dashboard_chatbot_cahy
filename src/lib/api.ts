@@ -1,14 +1,16 @@
-// Client cho admin API của service Zalo OA (/admin/*) — đọc thẳng PostgreSQL hiện tại.
+// Client cho admin API của service Zalo OA (/admin/*) — dùng HttpOnly cookie cùng origin.
 // Dev: Vite proxy /admin -> localhost:8081. Prod: nginx proxy cùng origin.
 
-const TOKEN_KEY = 'cahy_dashboard_token'
+const LEGACY_TOKEN_KEY = 'cahy_dashboard_token'
 
 export const auth = {
-  get: () => localStorage.getItem(TOKEN_KEY) || sessionStorage.getItem(TOKEN_KEY) || '',
-  set: (t: string) => localStorage.setItem(TOKEN_KEY, t),
-  clear: () => {
-    localStorage.removeItem(TOKEN_KEY)
-    sessionStorage.removeItem(TOKEN_KEY)
+  clearLegacy: () => {
+    try {
+      localStorage.removeItem(LEGACY_TOKEN_KEY)
+      sessionStorage.removeItem(LEGACY_TOKEN_KEY)
+    } catch {
+      /* bỏ qua nếu storage bị chặn */
+    }
   },
 }
 
@@ -20,12 +22,9 @@ export class ApiError extends Error {
 
 async function adminFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers)
-  const token = auth.get()
-  if (token) headers.set('Authorization', `Bearer ${token}`)
   if (init.body && !(init.body instanceof FormData)) headers.set('Content-Type', 'application/json')
-  const res = await fetch(`/admin${path}`, { ...init, headers })
-  if (res.status === 401 && token) {
-    auth.clear()
+  const res = await fetch(`/admin${path}`, { ...init, headers, credentials: 'include' })
+  if (res.status === 401 && path !== '/login' && path !== '/me') {
     window.dispatchEvent(new Event('auth:expired'))
   }
   if (!res.ok) {
@@ -68,6 +67,7 @@ export interface User {
   approved_at?: number
   last_login_at?: number
   created_at?: number
+  totp_enabled?: boolean
 }
 
 export interface OA {
@@ -274,6 +274,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ username, password, totp_code }),
     }),
+  logout: () => request<{ ok: boolean }>('/logout', { method: 'POST' }),
   me: () => request<User>('/me'),
   updateProfile: (body: { full_name?: string; avatar?: string }) =>
     request<{ ok: boolean; user?: User | null }>('/me', { method: 'PUT', body: JSON.stringify(body) }),
@@ -286,7 +287,15 @@ export const api = {
     })
   },
   changePassword: (body: { current_password: string; new_password: string }) =>
-    request<{ ok: boolean }>('/me/change-password', { method: 'POST', body: JSON.stringify(body) }),
+    request<{ ok: boolean; user?: User | null }>('/me/change-password', { method: 'POST', body: JSON.stringify(body) }),
+  totpSetup: () => request<{ secret: string; otpauth_url: string }>('/me/totp/setup', { method: 'POST' }),
+  totpEnable: (code: string) =>
+    request<{ ok: boolean; user?: User | null }>('/me/totp/enable', { method: 'POST', body: JSON.stringify({ code }) }),
+  totpDisable: (current_password: string, code: string) =>
+    request<{ ok: boolean; user?: User | null }>('/me/totp/disable', {
+      method: 'POST',
+      body: JSON.stringify({ current_password, code }),
+    }),
   overview: () => request<Overview>('/overview'),
   sources: () => request<{ sources: Source[] }>('/sources').then((r) => r.sources),
   daily: (days: number, source = '') =>
